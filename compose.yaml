@@ -1,0 +1,21 @@
+services:
+  auth-db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: ${AUTH_DB_USER:?Set AUTH_DB_USER}
+      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD:?Set AUTH_DB_PASSWORD}
+      POSTGRES_DB: ${AUTH_DB_NAME:?Set AUTH_DB_NAME}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - auth-db-data:/var/lib/postgresql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  auth-db-data:
