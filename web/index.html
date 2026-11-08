@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>File Share — вход</title>
+</head>
+<body>
+    <h1>File Share</h1>
+
+    <h2>Регистрация</h2>
+
+    <form id="register-form">
+        <p>
+            <label for="register-login">Логин</label>
+            <input id="register-login" autocomplete="username" required>
+        </p>
+
+        <p>
+            <label for="register-name">Отображаемое имя</label>
+            <input id="register-name" autocomplete="nickname" required>
+        </p>
+
+        <p>
+            <label for="register-password">Пароль</label>
+            <input id="register-password" type="password"
+                autocomplete="new-password" required>
+        </p>
+
+        <button type="submit">Зарегистрироваться</button>
+    </form>
+
+    <p id="register-status" role="status"></p>
+
+    <hr>
+
+    <h2>Вход</h2>
+
+    <form id="login-form">
+        <p>
+            <label for="login">Логин</label>
+            <input id="login" autocomplete="username" required>
+        </p>
+
+        <p>
+            <label for="password">Пароль</label>
+            <input id="password" type="password"
+                   autocomplete="current-password" required>
+        </p>
+
+        <button type="submit">Войти</button>
+    </form>
+
+    <p id="status" role="status"></p>
+    <button id="logout-button" type="button" hidden>Выйти</button>
+
+    <script>
+        const form = document.querySelector("#login-form");
+        const loginInput = document.querySelector("#login");
+        const passwordInput = document.querySelector("#password");
+        const button = form.querySelector("button");
+        const status = document.querySelector("#status");
+        const logoutButton = document.querySelector("#logout-button");
+
+        // The browser stores the HttpOnly cookie. JavaScript never reads the JWT.
+        async function checkSession(showSignedOutMessage = false) {
+            const response = await fetch("/api/me", {
+                credentials: "same-origin",
+                cache: "no-store"
+            });
+
+            if (response.status === 401) {
+                logoutButton.hidden = true;
+                status.textContent = showSignedOutMessage
+                    ? "Вы не вошли или срок входа истёк. Войдите снова."
+                    : "Вы не вошли.";
+                return false;
+            }
+
+            const result = await response.json();
+            if (!response.ok) {
+                throw new Error(result.error || "Не удалось проверить вход");
+            }
+
+            logoutButton.hidden = false;
+            status.textContent = "Вы вошли. Ваш ID: " + result.user_id;
+            return true;
+        }
+
+        form.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            button.disabled = true;
+            logoutButton.disabled = true;
+            status.textContent = "Выполняется вход…";
+
+            try {
+                const response = await fetch("/api/auth/login", {
+                    method: "POST",
+                    credentials: "same-origin",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        login: loginInput.value,
+                        password: passwordInput.value
+                    })
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.error || "Не удалось войти");
+                }
+
+                passwordInput.value = "";
+                await checkSession(true);
+            } catch (error) {
+                status.textContent = error.message;
+            } finally {
+                button.disabled = false;
+                logoutButton.disabled = false;
+            }
+        });
+
+        logoutButton.addEventListener("click", async () => {
+            logoutButton.disabled = true;
+            button.disabled = true;
+            try {
+                const response = await fetch("/api/auth/logout", {
+                    method: "POST",
+                    credentials: "same-origin"
+                });
+                const result = await response.json();
+                if (!response.ok) {
+                    throw new Error(result.error || "Не удалось выйти");
+                }
+                logoutButton.hidden = true;
+                passwordInput.value = "";
+                status.textContent = "Вы вышли.";
+            } catch (error) {
+                status.textContent = error.message;
+            } finally {
+                logoutButton.disabled = false;
+                button.disabled = false;
+            }
+        });
+
+        const registerForm = document.querySelector("#register-form");
+        const registerStatus = document.querySelector("#register-status");
+        const registerButton = registerForm.querySelector("button");
+
+        registerForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            registerButton.disabled = true;
+            registerStatus.textContent = "Создаём пользователя…";
+
+            try {
+                const response = await fetch("/api/auth/register", {
+                    method: "POST",
+                    credentials: "same-origin",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        login: document.querySelector("#register-login").value,
+                        display_name: document.querySelector("#register-name").value,
+                        password: document.querySelector("#register-password").value
+                    })
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.error || "Не удалось зарегистрироваться");
+                }
+
+                registerForm.reset();
+
+                loginInput.value = result.login;
+                passwordInput.value = "";
+
+                registerStatus.textContent =
+                    "Пользователь создан. Введите пароль в форме входа и нажмите «Войти».";
+            } catch (error) {
+                registerStatus.textContent = error.message;
+            } finally {
+                registerButton.disabled = false;
+            }
+        });
+
+        // Restore the visible login state after a reload, using the cookie.
+        button.disabled = true;
+        checkSession().catch((error) => {
+            status.textContent = "Не удалось проверить вход: " + error.message;
+        }).finally(() => {
+            button.disabled = false;
+        });
+
+    </script>
+</body>
+</html>

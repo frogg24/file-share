@@ -5,10 +5,14 @@ import (
 	"errors"
 	"log"
 	"net/http"
+
+	"github.com/frogg24/file-share/internal/platform/session"
 )
 
 type Handler struct {
-	service *Service
+	service       *Service
+	tokenIssuer   *TokenIssuer
+	secureCookies bool
 }
 
 type registerRequest struct {
@@ -23,12 +27,83 @@ type registerResponse struct {
 	DisplayName string `json:"display_name"`
 }
 
+type loginRequest struct {
+	Login    string `json:"login"`
+	Password string `json:"password"`
+}
+
+type loginResponse struct {
+	ID          string `json:"id"`
+	Login       string `json:"login"`
+	DisplayName string `json:"display_name"`
+}
+
 type errorResponse struct {
 	Error string `json:"error"`
 }
 
-func NewHandler(service *Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *Service, tokenIssuer *TokenIssuer, secureCookies bool) *Handler {
+	return &Handler{service: service, tokenIssuer: tokenIssuer, secureCookies: secureCookies}
+}
+
+func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
+	var request loginRequest
+
+	err := json.NewDecoder(r.Body).Decode(&request)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errorResponse{
+			Error: "некорректный JSON запроса",
+		})
+		return
+	}
+
+	user, err := h.service.Login(r.Context(), LoginInput{
+		Login:    request.Login,
+		Password: request.Password,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidCredentials):
+			writeJSON(w, http.StatusUnauthorized, errorResponse{
+				Error: "неверный логин или пароль",
+			})
+
+		default:
+			log.Printf("Login failed: %v", err)
+			writeJSON(w, http.StatusInternalServerError, errorResponse{
+				Error: "внутренняя ошибка сервера",
+			})
+		}
+		return
+	}
+
+	accessToken, err := h.tokenIssuer.Issue(user.ID)
+	if err != nil {
+		log.Printf("Token issuance failed: %v", err)
+		writeJSON(w, http.StatusInternalServerError, errorResponse{
+			Error: "внутренняя ошибка сервера",
+		})
+		return
+	}
+
+	if err := session.SetCookie(w, accessToken, h.tokenIssuer.ttl, h.secureCookies); err != nil {
+		log.Printf("Session cookie creation failed: %v", err)
+		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "внутренняя ошибка сервера"})
+		return
+	}
+
+	response := loginResponse{
+		ID:          user.ID,
+		Login:       user.Login,
+		DisplayName: user.DisplayName,
+	}
+
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
+	session.ClearCookie(w, h.secureCookies)
+	writeJSON(w, http.StatusOK, map[string]string{"message": "вы вышли"})
 }
 
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
@@ -78,6 +153,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) {
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 

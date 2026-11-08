@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"unicode/utf8"
 
@@ -13,6 +14,11 @@ type RegisterInput struct {
 	Login       string
 	Password    string
 	DisplayName string
+}
+
+type LoginInput struct {
+	Login    string
+	Password string
 }
 
 type Service struct {
@@ -37,7 +43,7 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (*User, err
 	}
 
 	passwordLength := utf8.RuneCountInString(input.Password)
-	if passwordLength < 12 || passwordLength > 128 {
+	if passwordLength < 6 || passwordLength > 128 {
 		return nil, ErrInvalidInput
 	}
 
@@ -60,4 +66,31 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (*User, err
 		return nil, err
 	}
 	return &user, nil
+}
+
+func (s *Service) Login(ctx context.Context, input LoginInput) (*User, error) {
+	input.Login = strings.ToLower(strings.TrimSpace(input.Login))
+	if input.Login == "" || input.Password == "" {
+		return nil, ErrInvalidCredentials
+	}
+
+	user, err := s.repository.FindByLogin(ctx, input.Login)
+	if errors.Is(err, ErrUserNotFound) {
+		return nil, ErrInvalidCredentials
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	match, err := argon2id.ComparePasswordAndHash(
+		input.Password,
+		user.PasswordHash,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if !match {
+		return nil, ErrInvalidCredentials
+	}
+	return user, nil
 }

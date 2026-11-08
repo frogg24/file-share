@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/frogg24/file-share/internal/auth"
@@ -47,10 +48,27 @@ func main() {
 
 	repository := auth.NewRepository(pool)
 	service := auth.NewService(repository)
-	handler := auth.NewHandler(service)
+	tokenIssuer, err := auth.NewTokenIssuer(
+		"secrets/auth-private.key",
+		15*time.Minute,
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// Local HTTP development defaults to false. Enable this for HTTPS.
+	secureCookies := false
+	if value, present := os.LookupEnv("AUTH_COOKIE_SECURE"); present {
+		secureCookies, err = strconv.ParseBool(value)
+		if err != nil {
+			log.Fatal("AUTH_COOKIE_SECURE must be true or false")
+		}
+	}
+	handler := auth.NewHandler(service, tokenIssuer, secureCookies)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/auth/register", handler.Register)
+	mux.HandleFunc("POST /api/auth/login", handler.Login)
+	mux.HandleFunc("POST /api/auth/logout", handler.Logout)
 
 	server := &http.Server{
 		Addr:              "127.0.0.1:8081",

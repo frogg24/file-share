@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -73,6 +74,10 @@ func (r *Repository) FindByLogin(ctx context.Context, login string) (*User, erro
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrUserNotFound
+	}
 
 	if err != nil {
 		return nil, err
