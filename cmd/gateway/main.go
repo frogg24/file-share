@@ -67,6 +67,30 @@ func newMuxWithAuth(verifier *token.Verifier, authAddress *url.URL) http.Handler
 		},
 	}
 
+	uploadAddress := &url.URL{
+		Scheme: "http",
+		Host:   "127.0.0.1:8082",
+	}
+
+	uploadProxy := &httputil.ReverseProxy{
+		Rewrite: func(request *httputil.ProxyRequest) {
+			request.SetURL(uploadAddress)
+		},
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			log.Printf("Upload service unavailable: %v", err)
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+
+			err = json.NewEncoder(w).Encode(map[string]string{
+				"error": "сервис загрузки недоступен",
+			})
+			if err != nil {
+				log.Printf("Failed to write upload proxy error: %v", err)
+			}
+		},
+	}
+
 	mux.Handle("POST /api/auth/register", authProxy)
 	mux.Handle("POST /api/auth/login", authProxy)
 	mux.Handle("POST /api/auth/logout", authProxy)
@@ -75,6 +99,10 @@ func newMuxWithAuth(verifier *token.Verifier, authAddress *url.URL) http.Handler
 	mux.Handle(
 		"GET /api/me",
 		authenticator.RequireAuth(http.HandlerFunc(meHandler)),
+	)
+	mux.Handle(
+		"POST /api/upload/files",
+		authenticator.RequireAuth(uploadProxy),
 	)
 
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {

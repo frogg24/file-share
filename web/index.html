@@ -54,6 +54,23 @@
     <p id="status" role="status"></p>
     <button id="logout-button" type="button" hidden>Выйти</button>
 
+    <hr>
+
+    <h2>Загрузка файла</h2>
+    <p>Перед загрузкой войдите. Максимальный размер — 1 000 000 байт.</p>
+
+    <form id="upload-form">
+        <p>
+            <label for="upload-file">Файл</label>
+            <input id="upload-file" type="file" required>
+        </p>
+
+        <button type="submit">Загрузить</button>
+    </form>
+
+    <p id="upload-status" role="status"></p>
+
+
     <script>
         const form = document.querySelector("#login-form");
         const loginInput = document.querySelector("#login");
@@ -185,6 +202,59 @@
                 registerStatus.textContent = error.message;
             } finally {
                 registerButton.disabled = false;
+            }
+        });
+
+        const uploadForm = document.querySelector("#upload-form");
+        const uploadInput = document.querySelector("#upload-file");
+        const uploadButton = uploadForm.querySelector("button");
+        const uploadStatus = document.querySelector("#upload-status");
+        uploadForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const file = uploadInput.files[0];
+            if (!file) {
+                uploadStatus.textContent = "Выберите файл.";
+                return;
+            }
+            if (file.size > 1_000_000) {
+                uploadStatus.textContent =
+                    "Файл слишком большой. Максимум — 1 000 000 байт.";
+                return;
+            }
+            const data = new FormData();
+            data.append("file", file);
+            uploadButton.disabled = true;
+            uploadStatus.textContent = "Загружаем файл…";
+            try {
+                const response = await fetch("/api/upload/files", {
+                    method: "POST",
+                    credentials: "same-origin",
+                    body: data
+                });
+                if (response.status === 401) {
+                    uploadStatus.textContent = "Для загрузки нужно войти.";
+                    await checkSession(true);
+                    return;
+                }
+                const contentType = response.headers.get("Content-Type") || "";
+                if (!contentType.includes("application/json")) {
+                    throw new Error(
+                        "Неожиданный ответ сервера. HTTP: " + response.status
+                    );
+                }
+                const result = await response.json();
+                if (!response.ok) {
+                    throw new Error(result.error || "Не удалось загрузить файл");
+                }
+                uploadStatus.textContent =
+                    "Сохранён файл «" + result.original_name +
+                    "», размер: " + result.size +
+                    " байт. ID: " + result.id;
+                uploadForm.reset();
+            } catch (error) {
+                uploadStatus.textContent = error.message;
+            } finally {
+                uploadButton.disabled = false;
             }
         });
 
