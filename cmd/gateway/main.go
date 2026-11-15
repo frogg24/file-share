@@ -91,6 +91,26 @@ func newMuxWithAuth(verifier *token.Verifier, authAddress *url.URL) http.Handler
 		},
 	}
 
+	downloadAddress := &url.URL{
+		Scheme: "http",
+		Host:   "127.0.0.1:8083",
+	}
+	downloadProxy := &httputil.ReverseProxy{
+		Rewrite: func(request *httputil.ProxyRequest) {
+			request.SetURL(downloadAddress)
+		},
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			log.Printf("Download service unavailable: %v", err)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			if err := json.NewEncoder(w).Encode(map[string]string{
+				"error": "сервис скачивания недоступен",
+			}); err != nil {
+				log.Printf("Failed to write download proxy error: %v", err)
+			}
+		},
+	}
+
 	mux.Handle("POST /api/auth/register", authProxy)
 	mux.Handle("POST /api/auth/login", authProxy)
 	mux.Handle("POST /api/auth/logout", authProxy)
@@ -104,6 +124,8 @@ func newMuxWithAuth(verifier *token.Verifier, authAddress *url.URL) http.Handler
 		"POST /api/upload/files",
 		authenticator.RequireAuth(uploadProxy),
 	)
+
+	mux.Handle("GET /api/download/files/{id}", downloadProxy)
 
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "web/index.html")

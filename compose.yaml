@@ -34,8 +34,47 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    
+  download-db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: ${DOWNLOAD_DB_USER:?Set DOWNLOAD_DB_USER}
+      POSTGRES_PASSWORD: ${DOWNLOAD_DB_PASSWORD:?Set DOWNLOAD_DB_PASSWORD}
+      POSTGRES_DB: ${DOWNLOAD_DB_NAME:?Set DOWNLOAD_DB_NAME}
+    ports:
+      - "127.0.0.1:5435:5432"
+    volumes:
+      - download-db-data:/var/lib/postgresql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?Set RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD}
+    ports:
+      - "127.0.0.1:5673:5672"
+      - "127.0.0.1:15673:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
 
 volumes:
   auth-db-data:
   upload-db-data:
+  rabbitmq-data:
+  download-db-data:

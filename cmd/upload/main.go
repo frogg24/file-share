@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/frogg24/file-share/internal/platform/httpauth"
+	"github.com/frogg24/file-share/internal/platform/messaging"
 	"github.com/frogg24/file-share/internal/platform/token"
 	"github.com/frogg24/file-share/internal/upload"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -56,8 +57,21 @@ func run() error {
 	if err != nil {
 		return err
 	}
+
+	broker, err := messaging.NewRabbitMQ(
+		os.Getenv("RABBITMQ_ADDR"),
+		os.Getenv("RABBITMQ_USER"),
+		os.Getenv("RABBITMQ_PASSWORD"),
+	)
+	if err != nil {
+		return fmt.Errorf("подключение RabbitMQ: %w", err)
+	}
+	defer broker.Close()
+
+	log.Println("Connected to RabbitMQ; catalog queue is ready")
+
 	repository := upload.NewRepository(pool)
-	service := upload.NewService(repository)
+	service := upload.NewService(repository, broker)
 	handler := upload.NewHandler(service)
 	authenticator := httpauth.NewAuthenticator(verifier)
 	mux := http.NewServeMux()
