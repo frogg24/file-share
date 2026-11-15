@@ -11,7 +11,9 @@ import (
 
 	"github.com/frogg24/file-share/internal/download"
 	"github.com/frogg24/file-share/internal/events"
+	"github.com/frogg24/file-share/internal/platform/httpauth"
 	"github.com/frogg24/file-share/internal/platform/messaging"
+	"github.com/frogg24/file-share/internal/platform/token"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -94,9 +96,17 @@ func run() error {
 			log.Printf("File replica consumer stopped: %v", err)
 		}
 	}()
-	handler := download.NewHandler(repository)
+	verifier, err := token.NewVerifier("secrets/auth-public.key")
+	if err != nil {
+		return err
+	}
+	handler := download.NewHandler(repository, broker)
+	authenticator := httpauth.NewAuthenticator(verifier)
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/download/files/{id}", handler.Download)
+	mux.Handle(
+		"GET /api/download/files/{id}",
+		authenticator.OptionalAuth(http.HandlerFunc(handler.Download)),
+	)
 	server := &http.Server{
 		Addr:              "127.0.0.1:8083",
 		Handler:           mux,

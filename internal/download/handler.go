@@ -1,6 +1,7 @@
 package download
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
@@ -8,17 +9,22 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/frogg24/file-share/internal/events"
+	"github.com/frogg24/file-share/internal/platform/httpauth"
 	"github.com/google/uuid"
 )
 
+type EventPublisher interface {
+	Publish(ctx context.Context, eventType string, data any) error
+}
 type Handler struct {
 	repository *Repository
+	publisher  EventPublisher
 }
 
-func NewHandler(repository *Repository) *Handler {
-	return &Handler{repository: repository}
+func NewHandler(repository *Repository, publisher EventPublisher) *Handler {
+	return &Handler{repository: repository, publisher: publisher}
 }
-
 func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if len(id) != 36 {
@@ -39,6 +45,32 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "внутренняя ошибка сервера")
 		return
 	}
+
+	if r.Method != http.MethodHead {
+		record := DownloadRecord{
+			ID:     uuid.NewString(),
+			FileID: file.ID,
+		}
+		if userID, ok := httpauth.UserID(r.Context()); ok {
+			record.UserID = &userID
+		}
+		if err := h.repository.RecordDownload(r.Context(), &record); err != nil {
+			log.Printf("Record download for file %s failed: %v", file.ID, err)
+			writeError(w, http.StatusInternalServerError, "внутренняя ошибка сервера")
+			return
+		}
+		event := events.FileDownloaded{
+			DownloadID:   record.ID,
+			FileID:       record.FileID,
+			UserID:       record.UserID,
+			DownloadedAt: record.DownloadedAt,
+		}
+		if err := h.publisher.Publish(r.Context(), events.FileDownloadedType, event); err != nil {
+			log.Printf("Download %s recorded, but event publication failed: %v", record.ID, err)
+		} else {
+			log.Printf("Sent file.downloaded: download_id=%s, file_id=%s", record.ID, file.ID)
+		}
+	}
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", mime.FormatMediaType(
 		"attachment", map[string]string{"filename": file.OriginalName},
@@ -53,7 +85,6 @@ func (h *Handler) Download(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Write file %s failed: %v", file.ID, err)
 	}
 }
-
 func writeError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")

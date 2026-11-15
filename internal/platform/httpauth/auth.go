@@ -87,3 +87,45 @@ func writeUnauthorized(w http.ResponseWriter) {
 		log.Printf("Failed to write auth error: %v", err)
 	}
 }
+
+func (a *Authenticator) OptionalAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var rawToken string
+		headers := r.Header.Values("Authorization")
+
+		if len(headers) > 0 {
+			if len(headers) == 1 {
+				parts := strings.Fields(headers[0])
+				if len(parts) == 2 &&
+					strings.EqualFold(parts[0], "Bearer") {
+					rawToken = parts[1]
+				}
+			}
+		} else {
+			count := 0
+			for _, cookie := range r.Cookies() {
+				if cookie.Name == session.CookieName {
+					rawToken = cookie.Value
+					count++
+				}
+			}
+			if count != 1 {
+				rawToken = ""
+			}
+		}
+
+		if rawToken != "" && a != nil && a.verifier != nil {
+			userID, err := a.verifier.Verify(rawToken)
+			if err == nil {
+				ctx := context.WithValue(
+					r.Context(),
+					userIDContextKey{},
+					userID,
+				)
+				r = r.WithContext(ctx)
+			}
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
