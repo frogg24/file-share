@@ -92,17 +92,19 @@ func (r *Repository) List(ctx context.Context, options ListOptions) ([]FileListI
 		`_`, `\_`,
 	).Replace(options.Search)
 	pattern := "%" + escapedSearch + "%"
+	var ownerID any
+	if options.OwnerID != "" {
+		ownerID = options.OwnerID
+	}
 	const fromWhere = `
         FROM files f
         LEFT JOIN users u ON u.id = f.owner_id
         WHERE f.deleted_at IS NULL
-          AND (
-              f.original_name ILIKE $1
-              OR COALESCE(u.display_name, 'anonymous') ILIKE $1
-          )
+			AND ($2::uuid IS NULL OR f.owner_id = $2)
+          	AND (f.original_name ILIKE $1 OR COALESCE(u.display_name, 'anonymous') ILIKE $1)
     `
 	var total int64
-	if err := r.db.QueryRow(ctx, "SELECT count(*) "+fromWhere, pattern).Scan(&total); err != nil {
+	if err := r.db.QueryRow(ctx, "SELECT count(*) "+fromWhere, pattern, ownerID).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 	query := fmt.Sprintf(`
@@ -110,9 +112,9 @@ func (r *Repository) List(ctx context.Context, options ListOptions) ([]FileListI
                f.original_name, f.size, f.download_count, f.created_at
         `+fromWhere+`
         ORDER BY %s %s, f.id ASC
-        LIMIT $2 OFFSET $3
+        LIMIT $3 OFFSET $4
     `, column, direction)
-	rows, err := r.db.Query(ctx, query, pattern, options.Limit, options.Offset)
+	rows, err := r.db.Query(ctx, query, pattern, ownerID, options.Limit, options.Offset)
 	if err != nil {
 		return nil, 0, err
 	}

@@ -4,6 +4,8 @@ import (
 	"context"
 	"math"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 type ListInput struct {
@@ -12,6 +14,7 @@ type ListInput struct {
 	Order    string
 	Page     int
 	PageSize int
+	OwnerID  string
 }
 
 type ListResult struct {
@@ -64,12 +67,22 @@ func (s *Service) List(ctx context.Context, input ListInput) (*ListResult, error
 		return nil, ErrInvalidInput
 	}
 
+	if input.OwnerID != "" {
+		if len(input.OwnerID) != 36 {
+			return nil, ErrInvalidInput
+		}
+		if _, err := uuid.Parse(input.OwnerID); err != nil {
+			return nil, ErrInvalidInput
+		}
+	}
+
 	options := ListOptions{
-		Search: input.Search,
-		SortBy: input.SortBy,
-		Desc:   input.Order == "desc",
-		Limit:  input.PageSize,
-		Offset: (input.Page - 1) * input.PageSize,
+		Search:  input.Search,
+		SortBy:  input.SortBy,
+		Desc:    input.Order == "desc",
+		Limit:   input.PageSize,
+		Offset:  (input.Page - 1) * input.PageSize,
+		OwnerID: input.OwnerID,
 	}
 
 	items, total, err := s.repository.List(ctx, options)

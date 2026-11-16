@@ -86,6 +86,26 @@
                     <tbody id="files-body"></tbody>
                 </table>
             </div>
+
+            <nav id="files-pagination"
+                class="files-pagination"
+                aria-label="Страницы ваших файлов"
+                hidden>
+                <button id="files-prev" class="logout-button" type="button">
+                    Назад
+                </button>
+
+                <span id="files-page-info" role="status"></span>
+
+                <button id="files-next" class="logout-button" type="button">
+                    Далее
+                </button>
+
+                <button id="files-refresh" class="logout-button" type="button">
+                    Обновить
+                </button>
+            </nav>
+
         </section>
     </main>
     <dialog id="name-dialog" class="name-dialog" aria-label="Изменить имя">
@@ -114,54 +134,69 @@
             </div>
         </form>
     </dialog>
-
-
     <script>
         (() => {
             const profileStatus = document.querySelector("#profile-status");
             const filesStatus = document.querySelector("#files-status");
             const filesBody = document.querySelector("#files-body");
             const filesTable = document.querySelector("#files-table-container");
-
+            const filesPagination = document.querySelector("#files-pagination");
+            const filesPrev = document.querySelector("#files-prev");
+            const filesNext = document.querySelector("#files-next");
+            const filesRefresh = document.querySelector("#files-refresh");
+            const filesPageInfo = document.querySelector("#files-page-info");
+            const logoutButton = document.querySelector("#logout-button");
+            const editNameButton = document.querySelector("#edit-name-button");
+            const nameDialog = document.querySelector("#name-dialog");
+            const nameForm = document.querySelector("#name-form");
+            const nameInput = document.querySelector("#name-input");
+            const saveNameButton = document.querySelector("#save-name-button");
+            const cancelNameButton = document.querySelector("#cancel-name-button");
+            const filesPageSize = 10;
+            let currentProfile = null;
+            let filesPage = 1;
+            let filesTotal = 0;
+            let filesBusy = false;
+            function errorMessage(error) {
+                return error instanceof TypeError
+                    ? "Не удалось связаться с сервером."
+                    : error.message || "Не удалось выполнить запрос.";
+            }
+            function setFilesStatus(message, state = "info") {
+                filesStatus.textContent = message;
+                filesStatus.dataset.state = state;
+            }
             async function getJSON(url, options = {}) {
                 const response = await fetch(url, {
                     ...options,
-                    credentials: "same-origin",
                     cache: "no-store"
                 });
-
-
                 if (response.status === 401) {
                     window.location.replace("/auth");
                     return null;
                 }
-
                 if (response.status === 204) {
                     return;
                 }
-
                 const contentType = response.headers.get("Content-Type") || "";
                 if (!contentType.includes("application/json")) {
                     throw new Error(
                         "Неожиданный ответ сервера. HTTP: " + response.status
                     );
                 }
-
                 const result = await response.json();
                 if (!response.ok) {
-                    throw new Error(result.error || "Не удалось получить данные.");
+                    throw new Error(
+                        result.error || "Не удалось выполнить запрос."
+                    );
                 }
-
                 return result;
             }
-
             function formatDate(value) {
                 return new Date(value).toLocaleString("ru-RU");
             }
-
             function renderProfile(user) {
                 currentProfile = user;
-                editNameButton.disabled = false;
                 document.querySelector("#profile-login").textContent = user.login;
                 document.querySelector("#profile-name").textContent = user.display_name;
                 document.querySelector("#profile-id").textContent = user.id;
@@ -169,197 +204,135 @@
                     formatDate(user.created_at);
                 document.querySelector("#profile-updated").textContent =
                     formatDate(user.updated_at);
+                editNameButton.disabled = false;
             }
-
-            async function findUserFiles(userID) {
-                const ownFiles = new Map();
-                let page = 1;
-                const pageSize = 10;
-
-                while (true) {
-                    const query = new URLSearchParams({
-                        page: String(page),
-                        page_size: String(pageSize),
-                        sort: "name",
-                        order: "asc"
-                    });
-
-                    const result = await getJSON("/api/catalog/files?" + query);
-                    if (result === null) return null;
-
-                    for (const file of result.items) {
-                        if (file.owner_id === userID) {
-                            ownFiles.set(file.id, file);
-                        }
-                    }
-
-                    if (
-                        result.items.length === 0 ||
-                        page * pageSize >= result.total
-                    ) {
-                        break;
-                    }
-
-                    page++;
+            function updateFilesPagination() {
+                const pageCount = Math.max(
+                    1,
+                    Math.ceil(filesTotal / filesPageSize)
+                );
+                filesPageInfo.textContent =
+                    "Страница " + filesPage + " из " + pageCount;
+                filesPrev.disabled = filesBusy || filesPage <= 1;
+                filesNext.disabled = filesBusy || filesPage >= pageCount;
+                filesRefresh.disabled = filesBusy;
+                for (const button of filesBody.querySelectorAll(".delete-file-button")) {
+                    button.disabled = filesBusy;
                 }
-
-                return Array.from(ownFiles.values());
             }
-
             function renderFiles(files) {
                 filesBody.replaceChildren();
-
                 for (const file of files) {
                     const row = document.createElement("tr");
-
                     const name = document.createElement("td");
                     name.textContent = file.original_name;
-
                     const size = document.createElement("td");
                     size.textContent =
                         new Intl.NumberFormat("ru-RU").format(file.size);
-
                     const created = document.createElement("td");
                     created.textContent = formatDate(file.created_at);
-
                     const actions = document.createElement("td");
-
                     const deleteButton = document.createElement("button");
                     deleteButton.type = "button";
                     deleteButton.className = "logout-button delete-file-button";
                     deleteButton.textContent = "Удалить";
+                    deleteButton.disabled = filesBusy;
                     deleteButton.setAttribute(
                         "aria-label",
                         "Удалить файл " + file.original_name
                     );
-
                     deleteButton.addEventListener("click", () => {
                         deleteFile(file, row, deleteButton);
                     });
-
                     actions.append(deleteButton);
-
                     row.append(name, size, created, actions);
                     filesBody.append(row);
-
                 }
-
                 filesTable.hidden = files.length === 0;
-                filesStatus.textContent = files.length === 0
-                    ? "В каталоге пока нет ваших файлов."
-                    : "";
+                setFilesStatus(
+                    files.length === 0
+                        ? "На этой странице файлов нет."
+                        : ""
+                );
             }
-
+            async function loadFiles(page = 1) {
+                if (!currentProfile || filesBusy) return;
+                filesBusy = true;
+                updateFilesPagination();
+                setFilesStatus("Загружаем список…");
+                try {
+                    const query = new URLSearchParams({
+                        owner_id: currentProfile.id,
+                        page_size: String(filesPageSize),
+                        sort: "name",
+                        order: "asc"
+                    });
+                    let result;
+                    while (true) {
+                        query.set("page", String(page));
+                        result = await getJSON("/api/catalog/files?" + query);
+                        if (result === null) return;
+                        const lastPage = Math.max(
+                            1,
+                            Math.ceil(result.total / filesPageSize)
+                        );
+                        if (page <= lastPage) break;
+                        // Запрошенная страница исчезла после удаления файлов.
+                        page = lastPage;
+                    }
+                    filesPage = result.page;
+                    filesTotal = result.total;
+                    renderFiles(result.items);
+                    filesPagination.hidden = false;
+                } catch (error) {
+                    setFilesStatus(errorMessage(error), "error");
+                } finally {
+                    filesBusy = false;
+                    updateFilesPagination();
+                }
+            }
             async function deleteFile(file, row, button) {
-                if (button.disabled) return;
-
+                if (filesBusy || button.disabled) return;
                 const confirmed = window.confirm(
                     "Удалить файл «" + file.original_name + "»?"
                 );
                 if (!confirmed) return;
-
-                button.disabled = true;
+                filesBusy = true;
+                updateFilesPagination();
                 button.textContent = "Удаление…";
-
-                filesStatus.dataset.state = "info";
-                filesStatus.textContent =
-                    "Удаляем файл «" + file.original_name + "»…";
-
+                setFilesStatus(
+                    "Удаляем файл «" + file.original_name + "»…"
+                );
                 try {
                     const result = await getJSON(
                         "/api/upload/files/" + encodeURIComponent(file.id),
                         { method: "DELETE" }
                     );
-
                     if (result === null) return;
-
                     row.remove();
                     filesTable.hidden = filesBody.childElementCount === 0;
-
-                    filesStatus.dataset.state = "success";
-                    filesStatus.textContent = "Файл «" + file.original_name + "» помечен удалённым.";
+                    setFilesStatus(
+                        "Файл «" + file.original_name + "» помечен удалённым.",
+                        "success"
+                    );
                 } catch (error) {
-                    const message = error instanceof TypeError
-                        ? "Не удалось связаться с сервером."
-                        : error.message;
-
-                    filesStatus.dataset.state = "error";
-                    filesStatus.textContent =
-                        "«" + file.original_name + "»: " + message;
+                    setFilesStatus(
+                        "«" + file.original_name + "»: " + errorMessage(error),
+                        "error"
+                    );
                 } finally {
-                    button.disabled = false;
+                    filesBusy = false;
                     button.textContent = "Удалить";
+                    updateFilesPagination();
                 }
             }
-
-
-
-            async function loadPage() {
-                let user;
-
-                try {
-                    user = await getJSON("/api/auth/profile");
-                    if (user === null) return;
-
-                    renderProfile(user);
-                    profileStatus.hidden = true;
-                } catch (error) {
-                    profileStatus.textContent = error.message;
-                    profileStatus.dataset.state = "error";
-                    return;
-                }
-
-                filesStatus.textContent = "Загружаем список…";
-
-                try {
-                    const files = await findUserFiles(user.id);
-                    if (files === null) return;
-
-                    renderFiles(files);
-                } catch (error) {
-                    filesStatus.textContent = error.message;
-                    filesStatus.dataset.state = "error";
-                }
-            }
-
-            const logoutButton = document.querySelector("#logout-button");
-
-            logoutButton.addEventListener("click", async () => {
-                logoutButton.disabled = true;
-
-                try {
-                    const response = await fetch("/api/auth/logout", {
-                        method: "POST"
-                    });
-
-                    if (!response.ok) {
-                        const result = await response.json().catch(() => ({}));
-                        throw new Error(result.error || "Не удалось выйти.");
-                    }
-
-                    window.location.replace("/auth");
-                } catch (error) {
-                    profileStatus.textContent = error.message;
-                    profileStatus.dataset.state = "error";
-                    profileStatus.hidden = false;
-                    logoutButton.disabled = false;
-                }
-            });
-
-            const editNameButton = document.querySelector("#edit-name-button");
-            const nameDialog = document.querySelector("#name-dialog");
-            const nameForm = document.querySelector("#name-form");
-            const nameInput = document.querySelector("#name-input");
-            const saveNameButton = document.querySelector("#save-name-button");
-            const cancelNameButton = document.querySelector("#cancel-name-button");
-            let currentProfile = null;
             function setNameSaving(saving) {
                 for (const control of nameForm.elements) {
                     control.disabled = saving;
                 }
             }
             editNameButton.addEventListener("click", () => {
-                if (!currentProfile) return;
+                if (!currentProfile || nameDialog.open) return;
                 nameInput.value = currentProfile.display_name;
                 nameInput.setCustomValidity("");
                 nameDialog.showModal();
@@ -385,7 +358,7 @@
                 );
                 if (!nameInput.reportValidity()) return;
                 setNameSaving(true);
-                let errorMessage = "";
+                let failure = "";
                 try {
                     const user = await getJSON("/api/auth/profile", {
                         method: "PATCH",
@@ -400,19 +373,58 @@
                     renderProfile(user);
                     nameDialog.close();
                 } catch (error) {
-                    errorMessage = error instanceof TypeError
-                        ? "Не удалось связаться с сервером."
-                        : error.message;
+                    failure = errorMessage(error);
                 } finally {
                     setNameSaving(false);
                 }
-                if (errorMessage) {
-                    nameInput.setCustomValidity(errorMessage);
+                if (failure) {
+                    nameInput.setCustomValidity(failure);
                     nameInput.reportValidity();
                 }
             });
+            logoutButton.addEventListener("click", async () => {
+                if (logoutButton.disabled) return;
+                logoutButton.disabled = true;
+                try {
+                    const result = await getJSON("/api/auth/logout", {
+                        method: "POST"
+                    });
+                    if (result === null) return;
+                    window.location.replace("/auth");
+                } catch (error) {
+                    profileStatus.textContent = errorMessage(error);
+                    profileStatus.dataset.state = "error";
+                    profileStatus.hidden = false;
+                } finally {
+                    logoutButton.disabled = false;
+                }
+            });
+            filesPrev.addEventListener("click", () => {
+                loadFiles(filesPage - 1);
+            });
+            filesNext.addEventListener("click", () => {
+                loadFiles(filesPage + 1);
+            });
+            filesRefresh.addEventListener("click", () => {
+                loadFiles(filesPage);
+            });
+            async function loadPage() {
+                try {
+                    const user = await getJSON("/api/auth/profile");
+                    if (user === null) return;
+                    renderProfile(user);
+                    profileStatus.hidden = true;
+                } catch (error) {
+                    profileStatus.textContent = errorMessage(error);
+                    profileStatus.dataset.state = "error";
+                    profileStatus.hidden = false;
+                    return;
+                }
+                await loadFiles(1);
+            }
+            updateFilesPagination();
             loadPage();
         })();
-    </script>
+        </script>
 </body>
 </html>

@@ -18,9 +18,10 @@ func NewHandler(service *Service) *Handler {
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	input := ListInput{
-		Search: query.Get("search"),
-		SortBy: query.Get("sort"),
-		Order:  query.Get("order"),
+		Search:  query.Get("search"),
+		SortBy:  query.Get("sort"),
+		Order:   query.Get("order"),
+		OwnerID: query.Get("owner_id"),
 	}
 	if value := query.Get("page"); value != "" {
 		page, err := strconv.Atoi(value)

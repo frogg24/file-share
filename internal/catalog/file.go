@@ -13,9 +13,10 @@ type FileListItem struct {
 }
 
 type ListOptions struct {
-	Search string
-	SortBy string
-	Desc   bool
-	Limit  int
-	Offset int
+	Search  string
+	SortBy  string
+	Desc    bool
+	Limit   int
+	Offset  int
+	OwnerID string
 }
