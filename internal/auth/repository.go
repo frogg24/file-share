@@ -112,3 +112,31 @@ func (r *Repository) FindProfileByID(ctx context.Context, id string) (*Profile, 
 
 	return &profile, nil
 }
+
+func (r *Repository) UpdateDisplayName(ctx context.Context, id, displayName string) (*Profile, error) {
+	const query = `
+		UPDATE users
+		SET display_name = $2,
+		    updated_at = clock_timestamp()
+		WHERE id = $1
+		RETURNING id, login, display_name, created_at, updated_at
+	`
+
+	var profile Profile
+
+	err := r.db.QueryRow(ctx, query, id, displayName).Scan(
+		&profile.ID,
+		&profile.Login,
+		&profile.DisplayName,
+		&profile.CreatedAt,
+		&profile.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrUserNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &profile, nil
+}

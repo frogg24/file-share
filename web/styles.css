@@ -287,3 +287,40 @@ button, input { font: inherit; }
 #files-status:empty {
     display: none;
 }
+
+.profile-name-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.name-dialog {
+    width: min(380px, calc(100% - 32px));
+    padding: 24px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: 0 16px 48px #0002;
+}
+
+.name-dialog::backdrop {
+    background: #0006;
+}
+
+.name-dialog .field {
+    margin-bottom: 20px;
+}
+
+.name-dialog-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.name-dialog-actions button {
+    flex: 1;
+    width: auto;
+    min-height: 46px;
+    margin: 0;
+}

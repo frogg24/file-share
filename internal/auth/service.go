@@ -129,3 +129,32 @@ func (s *Service) Profile(ctx context.Context, id string) (*Profile, error) {
 	}
 	return profile, nil
 }
+
+func (s *Service) UpdateDisplayName(ctx context.Context, userID, displayName string) (*Profile, error) {
+	displayName = strings.TrimSpace(displayName)
+	if displayName == "" {
+		return nil, ErrInvalidInput
+	}
+	if _, err := uuid.Parse(userID); err != nil {
+		return nil, ErrInvalidInput
+	}
+
+	profile, err := s.repository.UpdateDisplayName(ctx, userID, displayName)
+	if err != nil {
+		return nil, err
+	}
+
+	event := events.UserChanged{
+		UserID:      profile.ID,
+		DisplayName: profile.DisplayName,
+		UpdatedAt:   profile.UpdatedAt,
+	}
+
+	if err := s.publisher.Publish(ctx, events.UserUpdatedType, event); err != nil {
+		log.Printf("User %s updated, but event publication failed: %v", profile.ID, err)
+	} else {
+		log.Printf("Sent user.updated: user_id=%s", profile.ID)
+	}
+
+	return profile, nil
+}

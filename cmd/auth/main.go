@@ -92,6 +92,10 @@ func main() {
 		"GET /api/auth/profile",
 		authenticator.RequireAuth(http.HandlerFunc(handler.Profile)),
 	)
+	mux.Handle(
+		"PATCH /api/auth/profile",
+		authenticator.RequireAuth(http.HandlerFunc(handler.UpdateProfile)),
+	)
 
 	server := &http.Server{
 		Addr:              "127.0.0.1:8081",

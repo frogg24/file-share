@@ -43,6 +43,10 @@ type errorResponse struct {
 	Error string `json:"error"`
 }
 
+type updateProfileRequest struct {
+	DisplayName string `json:"display_name"`
+}
+
 func NewHandler(service *Service, tokenIssuer *TokenIssuer, secureCookies bool) *Handler {
 	return &Handler{service: service, tokenIssuer: tokenIssuer, secureCookies: secureCookies}
 }
@@ -195,4 +199,57 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 	if err != nil {
 		log.Printf("Failed to write JSON response: %v", err)
 	}
+}
+
+func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
+	id, ok := httpauth.UserID(r.Context())
+	if !ok {
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		writeJSON(w, http.StatusUnauthorized, errorResponse{
+			Error: "требуется авторизация",
+		})
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
+
+	var request updateProfileRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+
+	if err := decoder.Decode(&request); err != nil {
+		var limitErr *http.MaxBytesError
+		if errors.As(err, &limitErr) {
+			writeJSON(w, http.StatusRequestEntityTooLarge, errorResponse{
+				Error: "слишком большой запрос",
+			})
+		} else {
+			writeJSON(w, http.StatusBadRequest, errorResponse{
+				Error: "некорректный JSON запроса",
+			})
+		}
+		return
+	}
+
+	profile, err := h.service.UpdateDisplayName(r.Context(), id, request.DisplayName)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, http.StatusBadRequest, errorResponse{
+				Error: "некорректные данные профиля",
+			})
+		case errors.Is(err, ErrUserNotFound):
+			writeJSON(w, http.StatusNotFound, errorResponse{
+				Error: "пользователь не найден",
+			})
+		default:
+			log.Printf("Profile update failed: %v", err)
+			writeJSON(w, http.StatusInternalServerError, errorResponse{
+				Error: "внутренняя ошибка сервера",
+			})
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, profile)
 }

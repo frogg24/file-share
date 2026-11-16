@@ -148,6 +148,10 @@ func newMuxWithAuth(verifier *token.Verifier, authAddress *url.URL) http.Handler
 		"GET /api/auth/profile",
 		authenticator.RequireAuth(authProxy),
 	)
+	mux.Handle(
+		"PATCH /api/auth/profile",
+		authenticator.RequireAuth(authProxy),
+	)
 
 	mux.Handle("GET /api/download/files/{id}", downloadProxy)
 

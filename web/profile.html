@@ -44,7 +44,15 @@
                 </div>
                 <div>
                     <dt>Отображаемое имя</dt>
-                    <dd id="profile-name">—</dd>
+                    <dd class="profile-name-row">
+                    <span id="profile-name">—</span>
+                    <button id="edit-name-button"
+                            class="logout-button"
+                            type="button"
+                            disabled>
+                        Изменить
+                    </button>
+                    </dd>
                 </div>
                 <div>
                     <dt>Дата регистрации</dt>
@@ -79,6 +87,33 @@
             </div>
         </section>
     </main>
+    <dialog id="name-dialog" class="name-dialog" aria-label="Изменить имя">
+        <form id="name-form" novalidate>
+            <div class="field">
+                <input id="name-input"
+                    type="text"
+                    aria-label="Новое имя"
+                    placeholder="Новое имя"
+                    autocomplete="nickname"
+                    required
+                    autofocus>
+            </div>
+
+            <div class="name-dialog-actions">
+                <button id="save-name-button"
+                        class="submit-button"
+                        type="submit">
+                    Сохранить
+                </button>
+                <button id="cancel-name-button"
+                        class="logout-button"
+                        type="button">
+                    Отмена
+                </button>
+            </div>
+        </form>
+    </dialog>
+
 
     <script>
         (() => {
@@ -87,11 +122,13 @@
             const filesBody = document.querySelector("#files-body");
             const filesTable = document.querySelector("#files-table-container");
 
-            async function getJSON(url) {
+            async function getJSON(url, options = {}) {
                 const response = await fetch(url, {
+                    ...options,
                     credentials: "same-origin",
                     cache: "no-store"
                 });
+
 
                 if (response.status === 401) {
                     window.location.replace("/auth");
@@ -118,6 +155,8 @@
             }
 
             function renderProfile(user) {
+                currentProfile = user;
+                editNameButton.disabled = false;
                 document.querySelector("#profile-login").textContent = user.login;
                 document.querySelector("#profile-name").textContent = user.display_name;
                 document.querySelector("#profile-id").textContent = user.id;
@@ -240,7 +279,71 @@
                 }
             });
 
-
+            const editNameButton = document.querySelector("#edit-name-button");
+            const nameDialog = document.querySelector("#name-dialog");
+            const nameForm = document.querySelector("#name-form");
+            const nameInput = document.querySelector("#name-input");
+            const saveNameButton = document.querySelector("#save-name-button");
+            const cancelNameButton = document.querySelector("#cancel-name-button");
+            let currentProfile = null;
+            function setNameSaving(saving) {
+                for (const control of nameForm.elements) {
+                    control.disabled = saving;
+                }
+            }
+            editNameButton.addEventListener("click", () => {
+                if (!currentProfile) return;
+                nameInput.value = currentProfile.display_name;
+                nameInput.setCustomValidity("");
+                nameDialog.showModal();
+                nameInput.select();
+            });
+            cancelNameButton.addEventListener("click", () => {
+                nameDialog.close();
+            });
+            nameDialog.addEventListener("cancel", (event) => {
+                if (saveNameButton.disabled) {
+                    event.preventDefault();
+                }
+            });
+            nameInput.addEventListener("input", () => {
+                nameInput.setCustomValidity("");
+            });
+            nameForm.addEventListener("submit", async (event) => {
+                event.preventDefault();
+                if (saveNameButton.disabled) return;
+                const displayName = nameInput.value.trim();
+                nameInput.setCustomValidity(
+                    displayName ? "" : "Введите новое имя."
+                );
+                if (!nameInput.reportValidity()) return;
+                setNameSaving(true);
+                let errorMessage = "";
+                try {
+                    const user = await getJSON("/api/auth/profile", {
+                        method: "PATCH",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            display_name: displayName
+                        })
+                    });
+                    if (user === null) return;
+                    renderProfile(user);
+                    nameDialog.close();
+                } catch (error) {
+                    errorMessage = error instanceof TypeError
+                        ? "Не удалось связаться с сервером."
+                        : error.message;
+                } finally {
+                    setNameSaving(false);
+                }
+                if (errorMessage) {
+                    nameInput.setCustomValidity(errorMessage);
+                    nameInput.reportValidity();
+                }
+            });
             loadPage();
         })();
     </script>
