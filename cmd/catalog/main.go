@@ -52,47 +52,81 @@ func run() error {
 		return err
 	}
 	log.Println("Connected to catalog database")
-	broker, err := messaging.NewRabbitMQ(
-		os.Getenv("RABBITMQ_ADDR"),
-		os.Getenv("RABBITMQ_USER"),
-		os.Getenv("RABBITMQ_PASSWORD"),
-	)
-	if err != nil {
-		return fmt.Errorf("подключение RabbitMQ: %w", err)
-	}
-	defer broker.Close()
+
 	repository := catalog.NewRepository(pool)
 	log.Println("Catalog service waiting for events")
 	go func() {
-		err := broker.Consume(context.Background(), "catalog.events",
-			func(ctx context.Context, message amqp.Delivery) error {
-				switch message.Type {
-				case events.FileCreatedType:
-					var event events.FileCreated
-					if err := json.Unmarshal(message.Body, &event); err != nil {
-						return err
+		for {
+			broker := connectCatalogBroker()
+
+			err := broker.Consume(
+				context.Background(),
+				"catalog.events",
+				func(ctx context.Context, message amqp.Delivery) error {
+					switch message.Type {
+					case events.FileCreatedType:
+						var event events.FileCreated
+						if err := json.Unmarshal(message.Body, &event); err != nil {
+							return err
+						}
+						if err := repository.ApplyFileCreated(ctx, event); err != nil {
+							return err
+						}
+						log.Printf(
+							"Applied file.created: file_id=%s",
+							event.FileID,
+						)
+
+					case events.FileDownloadedType:
+						var event events.FileDownloaded
+						if err := json.Unmarshal(message.Body, &event); err != nil {
+							return err
+						}
+						if err := repository.ApplyFileDownloaded(ctx, event); err != nil {
+							return err
+						}
+						log.Printf(
+							"Applied file.downloaded: download_id=%s, file_id=%s",
+							event.DownloadID,
+							event.FileID,
+						)
+
+					case events.UserUpdatedType, events.UserCreatedType:
+						var event events.UserChanged
+						if err := json.Unmarshal(message.Body, &event); err != nil {
+							return err
+						}
+
+						if err := repository.ApplyUserChanged(ctx, event); err != nil {
+							return err
+						}
+
+						log.Printf(
+							"Processed %s: user_id=%s",
+							message.Type,
+							event.UserID,
+						)
+
+					default:
+						return fmt.Errorf(
+							"неподдерживаемое событие %q",
+							message.Type,
+						)
 					}
-					if err := repository.ApplyFileCreated(ctx, event); err != nil {
-						return err
-					}
-					log.Printf("Applied file.created: file_id=%s", event.FileID)
-				case events.FileDownloadedType:
-					var event events.FileDownloaded
-					if err := json.Unmarshal(message.Body, &event); err != nil {
-						return err
-					}
-					if err := repository.ApplyFileDownloaded(ctx, event); err != nil {
-						return err
-					}
-					log.Printf("Applied file.downloaded: download_id=%s, file_id=%s", event.DownloadID, event.FileID)
-				default:
-					return fmt.Errorf("неподдерживаемое событие %q", message.Type)
-				}
-				return nil
-			},
-		)
-		if err != nil {
-			log.Printf("Catalog consumer stopped: %v", err)
+
+					return nil
+				},
+			)
+
+			if closeErr := broker.Close(); closeErr != nil {
+				log.Printf("Catalog RabbitMQ close failed: %v", closeErr)
+			}
+
+			log.Printf(
+				"Catalog consumer stopped: %v; restarting in 5s",
+				err,
+			)
+			time.Sleep(5 * time.Second)
 		}
 	}()
 	service := catalog.NewService(repository)
@@ -106,4 +140,24 @@ func run() error {
 	}
 	log.Println("Catalog service listening on http://127.0.0.1:8084")
 	return server.ListenAndServe()
+}
+
+func connectCatalogBroker() *messaging.RabbitMQ {
+	for {
+		broker, err := messaging.NewRabbitMQ(
+			os.Getenv("RABBITMQ_ADDR"),
+			os.Getenv("RABBITMQ_USER"),
+			os.Getenv("RABBITMQ_PASSWORD"),
+		)
+		if err == nil {
+			log.Println("Catalog connected to RabbitMQ")
+			return broker
+		}
+
+		log.Printf(
+			"Catalog RabbitMQ connection failed: %v; retrying in 5s",
+			err,
+		)
+		time.Sleep(5 * time.Second)
+	}
 }

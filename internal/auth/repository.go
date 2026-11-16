@@ -85,3 +85,30 @@ func (r *Repository) FindByLogin(ctx context.Context, login string) (*User, erro
 
 	return &user, nil
 }
+
+func (r *Repository) FindProfileByID(ctx context.Context, id string) (*Profile, error) {
+	const query = `
+		SELECT id, login, display_name, created_at, updated_at
+		FROM users
+		WHERE id = $1
+	`
+
+	var profile Profile
+
+	err := r.db.QueryRow(ctx, query, id).Scan(
+		&profile.ID,
+		&profile.Login,
+		&profile.DisplayName,
+		&profile.CreatedAt,
+		&profile.UpdatedAt,
+	)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrUserNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &profile, nil
+}

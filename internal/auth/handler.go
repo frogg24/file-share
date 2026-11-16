@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/frogg24/file-share/internal/platform/httpauth"
 	"github.com/frogg24/file-share/internal/platform/session"
 )
 
@@ -150,6 +151,39 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, response)
+}
+
+func (h *Handler) Profile(w http.ResponseWriter, r *http.Request) {
+	id, ok := httpauth.UserID(r.Context())
+	if !ok {
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		writeJSON(w, http.StatusUnauthorized, errorResponse{
+			Error: "требуется авторизация",
+		})
+		return
+	}
+
+	profile, err := h.service.Profile(r.Context(), id)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, http.StatusBadRequest, errorResponse{
+				Error: "некорректный ID пользователя",
+			})
+		case errors.Is(err, ErrUserNotFound):
+			writeJSON(w, http.StatusNotFound, errorResponse{
+				Error: "пользователь не найден",
+			})
+		default:
+			log.Printf("Profile lookup failed: %v", err)
+			writeJSON(w, http.StatusInternalServerError, errorResponse{
+				Error: "внутренняя ошибка сервера",
+			})
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, profile)
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) {

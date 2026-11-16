@@ -29,7 +29,19 @@ func NewRabbitMQ(address, user, password string) (*RabbitMQ, error) {
 		User:   url.UserPassword(user, password),
 		Path:   "/",
 	}
-	connection, err := amqp.Dial(connectionURL.String())
+
+	connection, err := amqp.DialConfig(
+		connectionURL.String(),
+		amqp.Config{
+			Recovery: &amqp.Recovery{
+				ReconnectionConfig: &amqp.ReconnectionConfig{
+					MaxRetryCount: 60,
+					RetryInterval: 5 * time.Second,
+				},
+			},
+		},
+	)
+
 	if err != nil {
 		return nil, err
 	}

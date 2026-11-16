@@ -66,34 +66,67 @@ func run() error {
 	repository := download.NewRepository(pool)
 	log.Println("Download service waiting for file replicas")
 	go func() {
-		err := broker.Consume(
-			context.Background(),
-			"download.files",
-			func(ctx context.Context, message amqp.Delivery) error {
-				if message.Type != events.FileReplicaCreatedType {
-					return fmt.Errorf("неподдерживаемое событие %q", message.Type)
-				}
-				var event events.FileReplicaCreated
-				if err := json.Unmarshal(message.Body, &event); err != nil {
-					return fmt.Errorf("чтение копии файла: %w", err)
-				}
-				file := download.File{
-					ID:           event.FileID,
-					OwnerID:      event.OwnerID,
-					OriginalName: event.OriginalName,
-					Size:         event.Size,
-					Content:      event.Content,
-					CreatedAt:    event.CreatedAt,
-				}
-				if err := repository.SaveReplica(ctx, &file); err != nil {
-					return fmt.Errorf("сохранение копии %s: %w", file.ID, err)
-				}
-				log.Printf("Replica saved: file_id=%s", file.ID)
-				return nil
-			},
-		)
-		if err != nil {
-			log.Printf("File replica consumer stopped: %v", err)
+		for {
+			consumerBroker, err := messaging.NewRabbitMQ(
+				os.Getenv("RABBITMQ_ADDR"),
+				os.Getenv("RABBITMQ_USER"),
+				os.Getenv("RABBITMQ_PASSWORD"),
+			)
+			if err != nil {
+				log.Printf(
+					"File replica connection failed: %v; retrying in 5s",
+					err,
+				)
+				time.Sleep(5 * time.Second)
+				continue
+			}
+
+			err = consumerBroker.Consume(
+				context.Background(),
+				"download.files",
+				func(ctx context.Context, message amqp.Delivery) error {
+					if message.Type != events.FileReplicaCreatedType {
+						return fmt.Errorf(
+							"неподдерживаемое событие %q",
+							message.Type,
+						)
+					}
+
+					var event events.FileReplicaCreated
+					if err := json.Unmarshal(message.Body, &event); err != nil {
+						return fmt.Errorf("чтение копии файла: %w", err)
+					}
+
+					file := download.File{
+						ID:           event.FileID,
+						OwnerID:      event.OwnerID,
+						OriginalName: event.OriginalName,
+						Size:         event.Size,
+						Content:      event.Content,
+						CreatedAt:    event.CreatedAt,
+					}
+					if err := repository.SaveReplica(ctx, &file); err != nil {
+						return fmt.Errorf(
+							"сохранение копии %s: %w",
+							file.ID,
+							err,
+						)
+					}
+
+					log.Printf("Replica saved: file_id=%s", file.ID)
+					return nil
+				},
+			)
+
+			if closeErr := consumerBroker.Close(); closeErr != nil {
+				log.Printf("File replica connection close failed: %v", closeErr)
+			}
+
+			log.Printf(
+				"File replica consumer stopped: %v; restarting in 5s",
+				err,
+			)
+			time.Sleep(5 * time.Second)
 		}
 	}()
 	verifier, err := token.NewVerifier("secrets/auth-public.key")

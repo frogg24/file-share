@@ -3,10 +3,12 @@ package auth
 import (
 	"context"
 	"errors"
+	"log"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/alexedwards/argon2id"
+	"github.com/frogg24/file-share/internal/events"
 	"github.com/google/uuid"
 )
 
@@ -21,12 +23,20 @@ type LoginInput struct {
 	Password string
 }
 
-type Service struct {
-	repository *Repository
+type EventPublisher interface {
+	Publish(ctx context.Context, eventType string, data any) error
 }
 
-func NewService(repository *Repository) *Service {
-	return &Service{repository: repository}
+type Service struct {
+	repository *Repository
+	publisher  EventPublisher
+}
+
+func NewService(repository *Repository, publisher EventPublisher) *Service {
+	return &Service{
+		repository: repository,
+		publisher:  publisher,
+	}
 }
 
 func (s *Service) Register(ctx context.Context, input RegisterInput) (*User, error) {
@@ -65,6 +75,19 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (*User, err
 	if err != nil {
 		return nil, err
 	}
+
+	event := events.UserChanged{
+		UserID:      user.ID,
+		DisplayName: user.DisplayName,
+		UpdatedAt:   user.UpdatedAt,
+	}
+
+	if err := s.publisher.Publish(ctx, events.UserCreatedType, event); err != nil {
+		log.Printf("User %s saved, but event publication failed: %v", user.ID, err)
+	} else {
+		log.Printf("Sent user.created: user_id=%s", user.ID)
+	}
+
 	return &user, nil
 }
 
@@ -93,4 +116,16 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (*User, error) {
 		return nil, ErrInvalidCredentials
 	}
 	return user, nil
+}
+
+func (s *Service) Profile(ctx context.Context, id string) (*Profile, error) {
+	if len(id) != 36 {
+		return nil, ErrInvalidInput
+	}
+
+	profile, err := s.repository.FindProfileByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return profile, nil
 }

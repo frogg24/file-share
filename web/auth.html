@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Вход и регистрация</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-inner">
+            <a class="brand" href="/" aria-label="File Share — главная">File <span>Share</span></a>
+            <nav class="main-nav" aria-label="Основная навигация">
+                <a href="/">Файлы</a>
+                <a href="/upload">Загрузить файл</a>
+            </nav>
+            <a class="account-link" id="account-link" href="/auth" aria-current="page">Войти</a>
+        </div>
+    </header>
+
+    <main class="auth-page">
+        <div class="auth-card">
+            <section class="auth-section" aria-labelledby="login-heading">
+                <h1 class="section-heading" id="login-heading">Вход</h1>
+                <p class="section-description">Войдите в свой аккаунт.</p>
+                <form id="login-form">
+                    <div class="field">
+                        <label for="login">Логин</label>
+                        <input id="login" name="login" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+                    </div>
+                    <div class="field">
+                        <label for="password">Пароль</label>
+                        <div class="password-field">
+                            <input id="password" name="password" type="password" autocomplete="current-password" required>
+                            <button class="password-toggle" type="button" data-password="password" aria-controls="password" aria-pressed="false" aria-label="Показать пароль">Показать</button>
+                        </div>
+                    </div>
+                    <button class="submit-button" id="login-button" type="submit">Войти</button>
+                    <p class="message" id="login-message" role="status" aria-live="polite"></p>
+                </form>
+            </section>
+
+            <section class="auth-section" aria-labelledby="register-heading">
+                <h2 class="section-heading" id="register-heading">Регистрация</h2>
+                <p class="section-description">Создайте новый аккаунт.</p>
+                <form id="register-form">
+                    <div class="field">
+                        <label for="register-login">Логин</label>
+                        <input id="register-login" name="login" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+                    </div>
+                    <div class="field">
+                        <label for="register-name">Отображаемое имя</label>
+                        <input id="register-name" name="display_name" autocomplete="nickname" required>
+                    </div>
+                    <div class="field">
+                        <label for="register-password">Пароль</label>
+                        <div class="password-field">
+                            <input id="register-password" name="password" type="password" autocomplete="new-password" aria-describedby="password-hint" required>
+                            <button class="password-toggle" type="button" data-password="register-password" aria-controls="register-password" aria-pressed="false" aria-label="Показать пароль">Показать</button>
+                        </div>
+                        <small class="field-hint" id="password-hint">От 6 до 128 символов.</small>
+                    </div>
+                    <button class="submit-button" id="register-button" type="submit">Зарегистрироваться</button>
+                    <p class="message" id="register-message" role="status" aria-live="polite"></p>
+                </form>
+            </section>
+        </div>
+    </main>
+
+    <script>
+        (() => {
+            const accountLink = document.querySelector("#account-link");
+            const loginForm = document.querySelector("#login-form");
+            const registerForm = document.querySelector("#register-form");
+            const loginInput = document.querySelector("#login");
+            const passwordInput = document.querySelector("#password");
+            const registerPassword = document.querySelector("#register-password");
+            const loginButton = document.querySelector("#login-button");
+            const registerButton = document.querySelector("#register-button");
+            const loginMessage = document.querySelector("#login-message");
+            const registerMessage = document.querySelector("#register-message");
+            const serverAvailable = location.protocol === "http:" || location.protocol === "https:";
+            let busy = false;
+
+            function message(element, text, state) {
+                element.textContent = text;
+                element.dataset.state = state;
+            }
+            function setBusy(value) {
+                busy = value;
+                loginButton.disabled = value;
+                registerButton.disabled = value;
+            }
+            function showPassword(input, button, visible) {
+                input.type = visible ? "text" : "password";
+                button.textContent = visible ? "Скрыть" : "Показать";
+                button.setAttribute("aria-pressed", String(visible));
+                button.setAttribute("aria-label", visible ? "Скрыть пароль" : "Показать пароль");
+            }
+            function hidePassword(input) {
+                const button = document.querySelector('[data-password="' + input.id + '"]');
+                showPassword(input, button, false);
+            }
+            document.querySelectorAll("[data-password]").forEach((button) => {
+                button.addEventListener("click", () => {
+                    const input = document.getElementById(button.dataset.password);
+                    showPassword(input, button, input.type === "password");
+                });
+            });
+
+            async function requestJSON(url, options = {}) {
+                const response = await fetch(url, {
+                    ...options,
+                    credentials: "same-origin",
+                    cache: "no-store"
+                });
+                const contentType = response.headers.get("Content-Type") || "";
+                if (!contentType.includes("application/json")) {
+                    throw new Error("Неожиданный ответ сервера. HTTP: " + response.status);
+                }
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || "Не удалось выполнить запрос.");
+                return data;
+            }
+            async function checkSession() {
+                const response = await fetch("/api/me", { credentials: "same-origin", cache: "no-store" });
+                if (response.status === 401) {
+                    accountLink.textContent = "Войти";
+                    accountLink.setAttribute("href", "/auth");
+                    accountLink.setAttribute("aria-current", "page");
+                    return false;
+                }
+                if (!response.ok) throw new Error("Не удалось проверить вход.");
+                accountLink.textContent = "Профиль";
+                accountLink.setAttribute("href", "/profile");
+                accountLink.removeAttribute("aria-current");
+                return true;
+            }
+            function postJSON(url, data) {
+                return requestJSON(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(data)
+                });
+            }
+            function requireServer(element) {
+                if (serverAvailable) return true;
+                message(element, "Для входа и регистрации откройте страницу через шлюз, а не как файл.", "info");
+                return false;
+            }
+
+            loginForm.addEventListener("submit", async (event) => {
+                event.preventDefault();
+                if (busy || !requireServer(loginMessage)) return;
+                if (!loginInput.value.trim()) {
+                    message(loginMessage, "Введите логин.", "error");
+                    return;
+                }
+                setBusy(true);
+                loginButton.textContent = "Входим…";
+                message(loginMessage, "", "info");
+                try {
+                    await postJSON("/api/auth/login", { login: loginInput.value, password: passwordInput.value });
+                    passwordInput.value = "";
+                    hidePassword(passwordInput);
+                    if (!await checkSession()) throw new Error("Сеанс не подтверждён. Попробуйте войти снова.");
+                    window.location.assign("/profile");
+                } catch (error) {
+                    message(loginMessage, error.message, "error");
+                } finally {
+                    loginButton.textContent = "Войти";
+                    setBusy(false);
+                }
+            });
+
+            registerForm.addEventListener("submit", async (event) => {
+                event.preventDefault();
+                if (busy || !requireServer(registerMessage)) return;
+                const login = document.querySelector("#register-login").value;
+                const displayName = document.querySelector("#register-name").value;
+                if (!login.trim() || !displayName.trim()) {
+                    message(registerMessage, "Введите логин и отображаемое имя.", "error");
+                    return;
+                }
+                const passwordLength = Array.from(registerPassword.value).length;
+                if (passwordLength < 6 || passwordLength > 128) {
+                    message(registerMessage, "Пароль должен содержать от 6 до 128 символов.", "error");
+                    return;
+                }
+                setBusy(true);
+                registerButton.textContent = "Создаём аккаунт…";
+                message(registerMessage, "", "info");
+                try {
+                    const user = await postJSON("/api/auth/register", {
+                        login: login,
+                        display_name: displayName,
+                        password: registerPassword.value
+                    });
+                    registerForm.reset();
+                    hidePassword(registerPassword);
+                    loginInput.value = user.login;
+                    passwordInput.value = "";
+                    hidePassword(passwordInput);
+                    message(registerMessage, "Аккаунт создан. Введите пароль слева и войдите.", "success");
+                    passwordInput.focus();
+                } catch (error) {
+                    message(registerMessage, error.message, "error");
+                } finally {
+                    registerButton.textContent = "Зарегистрироваться";
+                    setBusy(false);
+                }
+            });
+
+            if (serverAvailable) {
+                setBusy(true);
+                checkSession().catch(() => {
+                    message(loginMessage, "Не удалось проверить сеанс. Попробуйте войти или обновите страницу.", "error");
+                }).finally(() => setBusy(false));
+            }
+        })();
+    </script>
+</body>
+</html>

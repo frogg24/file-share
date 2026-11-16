@@ -133,3 +133,23 @@ func (r *Repository) List(ctx context.Context, options ListOptions) ([]FileListI
 	}
 	return items, total, nil
 }
+
+func (r *Repository) ApplyUserChanged(ctx context.Context, event events.UserChanged) error {
+	const query = `
+		INSERT INTO users (id, display_name, updated_at)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (id) DO UPDATE SET
+			display_name = EXCLUDED.display_name,
+			updated_at = EXCLUDED.updated_at
+		WHERE users.updated_at < EXCLUDED.updated_at
+	`
+
+	_, err := r.db.Exec(
+		ctx,
+		query,
+		event.UserID,
+		event.DisplayName,
+		event.UpdatedAt,
+	)
+	return err
+}

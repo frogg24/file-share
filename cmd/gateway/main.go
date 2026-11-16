@@ -144,11 +144,24 @@ func newMuxWithAuth(verifier *token.Verifier, authAddress *url.URL) http.Handler
 		"POST /api/upload/files",
 		authenticator.RequireAuth(uploadProxy),
 	)
+	mux.Handle(
+		"GET /api/auth/profile",
+		authenticator.RequireAuth(authProxy),
+	)
 
 	mux.Handle("GET /api/download/files/{id}", downloadProxy)
 
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "web/index.html")
+	})
+	mux.HandleFunc("GET /auth", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "web/auth.html")
+	})
+	mux.HandleFunc("GET /styles.css", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "web/styles.css")
+	})
+	mux.HandleFunc("GET /profile", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "web/profile.html")
 	})
 
 	mux.Handle("GET /api/catalog/files", catalogProxy)
