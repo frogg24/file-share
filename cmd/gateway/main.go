@@ -111,6 +111,26 @@ func newMuxWithAuth(verifier *token.Verifier, authAddress *url.URL) http.Handler
 		},
 	}
 
+	catalogAddress := &url.URL{
+		Scheme: "http",
+		Host:   "127.0.0.1:8084",
+	}
+	catalogProxy := &httputil.ReverseProxy{
+		Rewrite: func(request *httputil.ProxyRequest) {
+			request.SetURL(catalogAddress)
+		},
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			log.Printf("Catalog service unavailable: %v", err)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			if err := json.NewEncoder(w).Encode(map[string]string{
+				"error": "сервис каталога недоступен",
+			}); err != nil {
+				log.Printf("Failed to write catalog proxy error: %v", err)
+			}
+		},
+	}
+
 	mux.Handle("POST /api/auth/register", authProxy)
 	mux.Handle("POST /api/auth/login", authProxy)
 	mux.Handle("POST /api/auth/logout", authProxy)
@@ -130,6 +150,8 @@ func newMuxWithAuth(verifier *token.Verifier, authAddress *url.URL) http.Handler
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "web/index.html")
 	})
+
+	mux.Handle("GET /api/catalog/files", catalogProxy)
 
 	return gateway.RequireSameOrigin(mux)
 }

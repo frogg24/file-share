@@ -52,6 +52,24 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+  
+  catalog-db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: ${CATALOG_DB_USER:?Set CATALOG_DB_USER}
+      POSTGRES_PASSWORD: ${CATALOG_DB_PASSWORD?Set CATALOG_DB_PASSWORD}
+      POSTGRES_DB: ${CATALOG_DB_NAME:?Set CATALOG_DB_NAME}
+    ports:
+      - "127.0.0.1:5436:5432"
+    volumes:
+      - catalog-db-data:/var/lib/postgresql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
 
   rabbitmq:
@@ -78,3 +96,4 @@ volumes:
   upload-db-data:
   rabbitmq-data:
   download-db-data:
+  catalog-db-data:
