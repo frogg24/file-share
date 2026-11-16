@@ -102,16 +102,18 @@ func NewRabbitMQ(address, user, password string) (*RabbitMQ, error) {
 		return nil, err
 	}
 
-	err = channel.QueueBind(
-		downloadQueue,
-		"file.replica.*",
-		exchangeName,
-		false,
-		nil,
-	)
-	if err != nil {
-		connection.Close()
-		return nil, err
+	for _, key := range []string{"file.replica.*", "file.deleted"} {
+		err = channel.QueueBind(
+			downloadQueue,
+			key,
+			exchangeName,
+			false,
+			nil,
+		)
+		if err != nil {
+			connection.Close()
+			return nil, err
+		}
 	}
 
 	return &RabbitMQ{

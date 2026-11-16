@@ -76,6 +76,8 @@ func run() error {
 	authenticator := httpauth.NewAuthenticator(verifier)
 	mux := http.NewServeMux()
 	mux.Handle("POST /api/upload/files", authenticator.RequireAuth(http.HandlerFunc(handler.Upload)))
+	mux.Handle("DELETE /api/upload/files/{id}", authenticator.RequireAuth(http.HandlerFunc(handler.Delete)))
+
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(map[string]string{"status": "ok", "service": "upload"}); err != nil {

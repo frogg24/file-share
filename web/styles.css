@@ -324,3 +324,13 @@ button, input { font: inherit; }
     min-height: 46px;
     margin: 0;
 }
+.delete-file-button {
+    border-color: var(--error);
+    color: var(--error);
+}
+
+.delete-file-button:hover:not(:disabled) {
+    border-color: var(--error);
+    background: var(--error);
+    color: var(--surface);
+}

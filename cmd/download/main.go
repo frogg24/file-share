@@ -85,6 +85,20 @@ func run() error {
 				context.Background(),
 				"download.files",
 				func(ctx context.Context, message amqp.Delivery) error {
+					if message.Type == events.FileDeletedType {
+						var event events.FileDeleted
+						if err := json.Unmarshal(message.Body, &event); err != nil {
+							return fmt.Errorf("чтение удаления файла: %w", err)
+						}
+
+						if err := repository.ApplyFileDeleted(ctx, event); err != nil {
+							return fmt.Errorf("удаление копии %s: %w", event.FileID, err)
+						}
+
+						log.Printf("Applied file.deleted: file_id=%s", event.FileID)
+						return nil
+					}
+
 					if message.Type != events.FileReplicaCreatedType {
 						return fmt.Errorf(
 							"неподдерживаемое событие %q",

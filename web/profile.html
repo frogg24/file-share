@@ -80,6 +80,7 @@
                             <th scope="col">Название</th>
                             <th scope="col">Размер, байт</th>
                             <th scope="col">Дата загрузки</th>
+                            <th scope="col">Действия</th>
                         </tr>
                     </thead>
                     <tbody id="files-body"></tbody>
@@ -133,6 +134,10 @@
                 if (response.status === 401) {
                     window.location.replace("/auth");
                     return null;
+                }
+
+                if (response.status === 204) {
+                    return;
                 }
 
                 const contentType = response.headers.get("Content-Type") || "";
@@ -217,8 +222,26 @@
                     const created = document.createElement("td");
                     created.textContent = formatDate(file.created_at);
 
-                    row.append(name, size, created);
+                    const actions = document.createElement("td");
+
+                    const deleteButton = document.createElement("button");
+                    deleteButton.type = "button";
+                    deleteButton.className = "logout-button delete-file-button";
+                    deleteButton.textContent = "Удалить";
+                    deleteButton.setAttribute(
+                        "aria-label",
+                        "Удалить файл " + file.original_name
+                    );
+
+                    deleteButton.addEventListener("click", () => {
+                        deleteFile(file, row, deleteButton);
+                    });
+
+                    actions.append(deleteButton);
+
+                    row.append(name, size, created, actions);
                     filesBody.append(row);
+
                 }
 
                 filesTable.hidden = files.length === 0;
@@ -226,6 +249,50 @@
                     ? "В каталоге пока нет ваших файлов."
                     : "";
             }
+
+            async function deleteFile(file, row, button) {
+                if (button.disabled) return;
+
+                const confirmed = window.confirm(
+                    "Удалить файл «" + file.original_name + "»?"
+                );
+                if (!confirmed) return;
+
+                button.disabled = true;
+                button.textContent = "Удаление…";
+
+                filesStatus.dataset.state = "info";
+                filesStatus.textContent =
+                    "Удаляем файл «" + file.original_name + "»…";
+
+                try {
+                    const result = await getJSON(
+                        "/api/upload/files/" + encodeURIComponent(file.id),
+                        { method: "DELETE" }
+                    );
+
+                    if (result === null) return;
+
+                    row.remove();
+                    filesTable.hidden = filesBody.childElementCount === 0;
+
+                    filesStatus.dataset.state = "success";
+                    filesStatus.textContent = "Файл «" + file.original_name + "» помечен удалённым.";
+                } catch (error) {
+                    const message = error instanceof TypeError
+                        ? "Не удалось связаться с сервером."
+                        : error.message;
+
+                    filesStatus.dataset.state = "error";
+                    filesStatus.textContent =
+                        "«" + file.original_name + "»: " + message;
+                } finally {
+                    button.disabled = false;
+                    button.textContent = "Удалить";
+                }
+            }
+
+
 
             async function loadPage() {
                 let user;

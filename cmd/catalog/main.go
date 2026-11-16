@@ -107,6 +107,18 @@ func run() error {
 							event.UserID,
 						)
 
+					case events.FileDeletedType:
+						var event events.FileDeleted
+						if err := json.Unmarshal(message.Body, &event); err != nil {
+							return err
+						}
+
+						if err := repository.ApplyFileDeleted(ctx, event); err != nil {
+							return err
+						}
+
+						log.Printf("Applied file.deleted: file_id=%s", event.FileID)
+
 					default:
 						return fmt.Errorf(
 							"неподдерживаемое событие %q",

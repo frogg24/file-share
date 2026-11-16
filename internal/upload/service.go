@@ -2,6 +2,7 @@ package upload
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strings"
 
@@ -95,5 +96,39 @@ func (s *Service) Upload(ctx context.Context, input UploadInput) (*File, error) 
 	}
 
 	return &file, nil
+}
 
+func (s *Service) Delete(ctx context.Context, fileID, ownerID string) error {
+	if len(fileID) != 36 || ownerID == "" {
+		return ErrInvalidInput
+	}
+	if _, err := uuid.Parse(fileID); err != nil {
+		return ErrInvalidInput
+	}
+
+	file, err := s.repository.MarkDeleted(ctx, fileID, ownerID)
+	if err != nil {
+		return err
+	}
+
+	event := events.FileDeleted{
+		FileID:       file.ID,
+		OwnerID:      file.OwnerID,
+		OriginalName: file.OriginalName,
+		Size:         file.Size,
+		CreatedAt:    file.CreatedAt,
+		DeletedAt:    *file.DeletedAt,
+	}
+
+	if err := s.publisher.Publish(ctx, events.FileDeletedType, event); err != nil {
+		return fmt.Errorf(
+			"%w: file_id=%s: %v",
+			ErrEventPublicationFailed,
+			file.ID,
+			err,
+		)
+	}
+
+	log.Printf("Sent file.deleted: file_id=%s", file.ID)
+	return nil
 }

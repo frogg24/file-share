@@ -153,3 +153,23 @@ func (r *Repository) ApplyUserChanged(ctx context.Context, event events.UserChan
 	)
 	return err
 }
+
+func (r *Repository) ApplyFileDeleted(ctx context.Context, event events.FileDeleted) error {
+	const query = `
+		INSERT INTO files (id, owner_id, original_name, size, created_at, deleted_at, download_count)
+		VALUES ($1, $2, $3, $4, $5, $6, (SELECT count(*) FROM downloads WHERE file_id = $1))
+		ON CONFLICT (id) DO UPDATE SET deleted_at = COALESCE(files.deleted_at, EXCLUDED.deleted_at)
+	`
+
+	_, err := r.db.Exec(
+		ctx,
+		query,
+		event.FileID,
+		event.OwnerID,
+		event.OriginalName,
+		event.Size,
+		event.CreatedAt,
+		event.DeletedAt,
+	)
+	return err
+}

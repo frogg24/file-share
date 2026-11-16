@@ -153,6 +153,11 @@ func newMuxWithAuth(verifier *token.Verifier, authAddress *url.URL) http.Handler
 		authenticator.RequireAuth(authProxy),
 	)
 
+	mux.Handle(
+		"DELETE /api/upload/files/{id}",
+		authenticator.RequireAuth(uploadProxy),
+	)
+
 	mux.Handle("GET /api/download/files/{id}", downloadProxy)
 
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
