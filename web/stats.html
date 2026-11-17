@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Статистика файла</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-inner">
+            <nav class="main-nav" aria-label="Основная навигация">
+                <a href="/">Файлы</a>
+                <a href="/upload">Загрузить файл</a>
+            </nav>
+
+            <a class="account-link" href="/profile">
+                Профиль
+            </a>
+        </div>
+    </header>
+
+    <main class="profile-page">
+        <div class="profile-heading stats-heading">
+            <h1 class="section-heading">Статистика файла</h1>
+
+            <div class="stats-actions">
+                <button
+                    class="logout-button"
+                    id="stats-refresh"
+                    type="button"
+                >
+                    Обновить
+                </button>
+
+                <a class="logout-button stats-link" href="/profile">
+                    К профилю
+                </a>
+            </div>
+        </div>
+
+        <p
+            class="message"
+            id="stats-status"
+            role="status"
+            aria-live="polite"
+        >
+            Загружаем статистику…
+        </p>
+
+        <section
+            class="profile-panel"
+            id="stats-summary"
+            aria-labelledby="stats-file-heading"
+            hidden
+        >
+            <h2 id="stats-file-heading">Файл</h2>
+
+            <dl class="profile-fields">
+                <div>
+                    <dt>Название</dt>
+                    <dd id="stats-file-name">—</dd>
+                </div>
+
+                <div>
+                    <dt>Всего скачиваний</dt>
+                    <dd id="stats-download-count">—</dd>
+                </div>
+            </dl>
+        </section>
+
+        <section
+            class="profile-panel"
+            id="stats-history"
+            aria-labelledby="stats-history-heading"
+            hidden
+        >
+            <h2 id="stats-history-heading">История скачиваний</h2>
+
+            <p class="stats-empty" id="stats-empty" hidden>
+                История скачиваний пока пуста.
+            </p>
+
+            <div
+                class="table-container"
+                id="stats-table-container"
+                hidden
+            >
+                <table class="files-table">
+                    <thead>
+                        <tr>
+                            <th scope="col">Пользователь</th>
+                            <th scope="col">Дата и время</th>
+                        </tr>
+                    </thead>
+
+                    <tbody id="stats-body"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        (() => {
+            const fileID = new URLSearchParams(
+                window.location.search
+            ).get("file_id");
+
+            const status = document.querySelector("#stats-status");
+            const summary = document.querySelector("#stats-summary");
+            const history = document.querySelector("#stats-history");
+            const fileName = document.querySelector("#stats-file-name");
+            const downloadCount = document.querySelector("#stats-download-count");
+
+            const emptyMessage = document.querySelector("#stats-empty");
+            const tableContainer = document.querySelector("#stats-table-container");
+            const tableBody = document.querySelector("#stats-body");
+            const refreshButton = document.querySelector("#stats-refresh");
+
+            const numberFormat = new Intl.NumberFormat("ru-RU");
+
+            let busy = false;
+
+            function showStatus(message, state = "info") {
+                status.textContent = message;
+                status.dataset.state = state;
+                status.hidden = false;
+            }
+
+            function setBusy(value) {
+                busy = value;
+
+                if (refreshButton) {
+                    refreshButton.disabled = value;
+                }
+            }
+
+            function renderStats(stats) {
+                fileName.textContent = stats.original_name;
+
+                downloadCount.textContent = numberFormat.format(
+                    stats.download_count
+                );
+
+                const rows = document.createDocumentFragment();
+
+                for (const download of stats.downloads) {
+                    const row = document.createElement("tr");
+
+                    const userCell = document.createElement("td");
+                    userCell.textContent = download.user_name;
+
+                    const dateCell = document.createElement("td");
+                    dateCell.textContent = new Date(
+                        download.downloaded_at
+                    ).toLocaleString("ru-RU");
+
+                    row.append(userCell, dateCell);
+                    rows.append(row);
+                }
+
+                tableBody.replaceChildren(rows);
+
+                const hasDownloads = stats.downloads.length > 0;
+
+                emptyMessage.hidden = hasDownloads;
+                tableContainer.hidden = !hasDownloads;
+
+                summary.hidden = false;
+                history.hidden = false;
+                status.hidden = true;
+            }
+
+            async function loadStats() {
+                if (busy) return;
+
+                if (!fileID) {
+                    showStatus(
+                        "Не указан файл. Откройте статистику из профиля.",
+                        "error"
+                    );
+
+                    if (refreshButton) {
+                        refreshButton.disabled = true;
+                    }
+
+                    return;
+                }
+
+                setBusy(true);
+
+                summary.hidden = true;
+                history.hidden = true;
+                showStatus("Загружаем статистику…");
+
+                try {
+                    const response = await fetch(
+                        "/api/catalog/files/" +
+                            encodeURIComponent(fileID) +
+                            "/stats",
+                        { cache: "no-store" }
+                    );
+
+                    if (response.status === 401) {
+                        window.location.replace("/auth");
+                        return;
+                    }
+
+                    const contentType =
+                        response.headers.get("Content-Type") || "";
+
+                    if (!contentType.includes("application/json")) {
+                        throw new Error(
+                            "Неожиданный ответ сервера. HTTP: " + response.status
+                        );
+                    }
+
+                    const stats = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(
+                            stats.error || "Не удалось получить статистику."
+                        );
+                    }
+
+                    renderStats(stats);
+                } catch (error) {
+                    showStatus(
+                        error.message || "Не удалось загрузить статистику.",
+                        "error"
+                    );
+                } finally {
+                    setBusy(false);
+                }
+            }
+
+            if (refreshButton) {
+                refreshButton.addEventListener("click", loadStats);
+            }
+
+            loadStats();
+        })();
+    </script>
+</body>
+</html>

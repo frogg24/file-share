@@ -20,3 +20,15 @@ type ListOptions struct {
 	Offset  int
 	OwnerID string
 }
+
+type FileStats struct {
+	FileID        string         `json:"file_id"`
+	OriginalName  string         `json:"original_name"`
+	DownloadCount int64          `json:"download_count"`
+	Downloads     []DownloadInfo `json:"downloads"`
+}
+
+type DownloadInfo struct {
+	UserName     string    `json:"user_name"`
+	DownloadedAt time.Time `json:"downloaded_at"`
+}

@@ -11,7 +11,9 @@ import (
 
 	"github.com/frogg24/file-share/internal/catalog"
 	"github.com/frogg24/file-share/internal/events"
+	"github.com/frogg24/file-share/internal/platform/httpauth"
 	"github.com/frogg24/file-share/internal/platform/messaging"
+	"github.com/frogg24/file-share/internal/platform/token"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -52,6 +54,13 @@ func run() error {
 		return err
 	}
 	log.Println("Connected to catalog database")
+
+	verifier, err := token.NewVerifier("secrets/auth-public.key")
+	if err != nil {
+		return err
+	}
+
+	authenticator := httpauth.NewAuthenticator(verifier)
 
 	repository := catalog.NewRepository(pool)
 	log.Println("Catalog service waiting for events")
@@ -145,6 +154,11 @@ func run() error {
 	handler := catalog.NewHandler(service)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/catalog/files", handler.List)
+	mux.Handle(
+		"GET /api/catalog/files/{id}/stats",
+		authenticator.RequireAuth(http.HandlerFunc(handler.FileStats)),
+	)
+
 	server := &http.Server{
 		Addr:              "127.0.0.1:8084",
 		Handler:           mux,

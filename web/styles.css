@@ -513,3 +513,30 @@ button, input { font: inherit; }
     color: var(--muted);
     overflow-wrap: anywhere;
 }
+
+.stats-heading {
+    flex-wrap: wrap;
+}
+
+.stats-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.stats-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+}
+
+.files-table .stats-link {
+    margin-right: 8px;
+}
+
+.stats-empty {
+    margin: 0;
+    color: var(--muted);
+}

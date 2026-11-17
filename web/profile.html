@@ -243,7 +243,13 @@
                     deleteButton.addEventListener("click", () => {
                         deleteFile(file, row, deleteButton);
                     });
-                    actions.append(deleteButton);
+                    const statsLink = document.createElement("a");
+                    statsLink.className = "logout-button stats-link";
+                    statsLink.textContent = "Статистика";
+                    statsLink.href = "/stats?file_id=" + encodeURIComponent(file.id);
+
+                    actions.append(statsLink, deleteButton);
+
                     row.append(name, size, created, actions);
                     filesBody.append(row);
                 }

@@ -175,8 +175,15 @@ func newMuxWithAuth(verifier *token.Verifier, authAddress *url.URL) http.Handler
 	mux.HandleFunc("GET /profile", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "web/profile.html")
 	})
+	mux.HandleFunc("GET /stats", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "web/stats.html")
+	})
 
 	mux.Handle("GET /api/catalog/files", catalogProxy)
+	mux.Handle(
+		"GET /api/catalog/files/{id}/stats",
+		authenticator.RequireAuth(catalogProxy),
+	)
 
 	return gateway.RequireSameOrigin(mux)
 }

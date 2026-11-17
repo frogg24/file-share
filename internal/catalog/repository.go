@@ -2,10 +2,12 @@ package catalog
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/frogg24/file-share/internal/events"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -174,4 +176,78 @@ func (r *Repository) ApplyFileDeleted(ctx context.Context, event events.FileDele
 		event.DeletedAt,
 	)
 	return err
+}
+
+func (r *Repository) FileStats(ctx context.Context, fileID, ownerID string) (*FileStats, error) {
+	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{
+		IsoLevel:   pgx.RepeatableRead,
+		AccessMode: pgx.ReadOnly,
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	stats := FileStats{
+		Downloads: make([]DownloadInfo, 0),
+	}
+
+	const fileQuery = `
+		SELECT id, original_name, download_count
+		FROM files
+		WHERE id = $1
+		  AND owner_id = $2
+		  AND deleted_at IS NULL
+	`
+
+	err = tx.QueryRow(ctx, fileQuery, fileID, ownerID).Scan(
+		&stats.FileID,
+		&stats.OriginalName,
+		&stats.DownloadCount,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrFileNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	const downloadsQuery = `
+		SELECT
+			CASE
+				WHEN d.user_id IS NULL THEN 'Гость'
+				ELSE COALESCE(u.display_name, 'Имя пока неизвестно')
+			END,
+			d.downloaded_at
+		FROM downloads d
+		LEFT JOIN users u ON u.id = d.user_id
+		WHERE d.file_id = $1
+		ORDER BY d.downloaded_at DESC, d.id DESC
+	`
+
+	rows, err := tx.Query(ctx, downloadsQuery, fileID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var download DownloadInfo
+
+		if err := rows.Scan(&download.UserName, &download.DownloadedAt); err != nil {
+			return nil, err
+		}
+
+		stats.Downloads = append(stats.Downloads, download)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	return &stats, nil
 }

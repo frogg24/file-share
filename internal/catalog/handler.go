@@ -6,6 +6,8 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+
+	"github.com/frogg24/file-share/internal/platform/httpauth"
 )
 
 type Handler struct {
@@ -58,4 +60,41 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 	if err := json.NewEncoder(w).Encode(data); err != nil {
 		log.Printf("Failed to write catalog response: %v", err)
 	}
+}
+
+func (h *Handler) FileStats(w http.ResponseWriter, r *http.Request) {
+	ownerID, ok := httpauth.UserID(r.Context())
+	if !ok {
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		writeJSON(w, http.StatusUnauthorized, map[string]string{
+			"error": "требуется авторизация",
+		})
+		return
+	}
+
+	fileID := r.PathValue("id")
+
+	stats, err := h.service.FileStats(r.Context(), fileID, ownerID)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidInput):
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": "некорректный ID файла",
+			})
+
+		case errors.Is(err, ErrFileNotFound):
+			writeJSON(w, http.StatusNotFound, map[string]string{
+				"error": "файл не найден",
+			})
+
+		default:
+			log.Printf("File stats failed: file_id=%s: %v", fileID, err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{
+				"error": "внутренняя ошибка сервера",
+			})
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, stats)
 }

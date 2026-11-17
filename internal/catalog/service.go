@@ -99,3 +99,25 @@ func (s *Service) List(ctx context.Context, input ListInput) (*ListResult, error
 
 	return &res, nil
 }
+
+func (s *Service) FileStats(ctx context.Context, fileID string, ownerID string) (*FileStats, error) {
+	if _, err := uuid.Parse(fileID); err != nil {
+		return nil, ErrInvalidInput
+	}
+	if len(fileID) != 36 {
+		return nil, ErrInvalidInput
+	}
+	if _, err := uuid.Parse(ownerID); err != nil {
+		return nil, ErrInvalidInput
+	}
+	if len(ownerID) != 36 {
+		return nil, ErrInvalidInput
+	}
+
+	stat, err := s.repository.FileStats(ctx, fileID, ownerID)
+	if err != nil {
+		return nil, err
+	}
+
+	return stat, nil
+}
