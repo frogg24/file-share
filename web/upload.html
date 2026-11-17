@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Загрузка файла</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-inner">
+            <nav class="main-nav" aria-label="Основная навигация">
+                <a href="/">Файлы</a>
+                <a href="/upload" aria-current="page">Загрузить файл</a>
+            </nav>
+
+            <a class="account-link" id="account-link" href="/auth">
+                Войти
+            </a>
+        </div>
+    </header>
+
+    <main class="profile-page">
+
+        <section class="profile-panel upload-panel" aria-label="Загрузка файла">
+            <p
+                class="message"
+                id="session-status"
+                role="status"
+                aria-live="polite"
+            >
+                Проверяем вход…
+            </p>
+
+            <p id="login-notice" hidden>
+                Для загрузки файла <a href="/auth">войдите в аккаунт</a>.
+            </p>
+
+            <form id="upload-form">
+                <div class="field file-picker-row">
+                    <label class="file-picker">
+                        <input
+                            id="upload-file"
+                            name="file"
+                            type="file"
+                            aria-describedby="selected-file-name"
+                            required
+                            disabled
+                        >
+                        <span class="file-picker-button">Выбрать файл</span>
+                    </label>
+
+                    <span
+                        class="file-picker-name"
+                        id="selected-file-name"
+                        role="status"
+                    >
+                        Файл не выбран
+                    </span>
+                </div>
+
+
+                <button
+                    class="submit-button"
+                    id="upload-button"
+                    type="submit"
+                    disabled
+                >
+                    Загрузить
+                </button>
+            </form>
+
+            <p
+                class="message"
+                id="upload-status"
+                role="status"
+                aria-live="polite"
+                hidden
+            ></p>
+        </section>
+    </main>
+
+    <script>
+        (() => {
+            const accountLink = document.querySelector("#account-link");
+            const sessionStatus = document.querySelector("#session-status");
+            const loginNotice = document.querySelector("#login-notice");
+
+            const form = document.querySelector("#upload-form");
+            const fileInput = document.querySelector("#upload-file");
+            const uploadButton = document.querySelector("#upload-button");
+            const uploadStatus = document.querySelector("#upload-status");
+
+            const maxFileSize = 1_000_000;
+            const numberFormat = new Intl.NumberFormat("ru-RU");
+
+            let signedIn = false;
+            let busy = false;
+
+            function showMessage(element, text, state = "info") {
+                element.textContent = text;
+                element.dataset.state = state;
+                element.hidden = false;
+            }
+
+            function updateControls() {
+                fileInput.disabled = busy || !signedIn;
+                uploadButton.disabled = busy || !signedIn;
+                uploadButton.textContent = busy
+                    ? "Загружаем…"
+                    : "Загрузить";
+            }
+
+            function showSignedOut() {
+                signedIn = false;
+
+                accountLink.textContent = "Войти";
+                accountLink.href = "/auth";
+
+                loginNotice.hidden = false;
+            }
+
+            async function checkSession() {
+                try {
+                    const response = await fetch("/api/me", {
+                        cache: "no-store"
+                    });
+
+                    if (response.status === 401) {
+                        showSignedOut();
+                        sessionStatus.hidden = true;
+                        return;
+                    }
+
+                    if (!response.ok) {
+                        throw new Error(
+                            "Не удалось проверить вход. HTTP: " + response.status
+                        );
+                    }
+
+                    signedIn = true;
+
+                    accountLink.textContent = "Профиль";
+                    accountLink.href = "/profile";
+
+                    loginNotice.hidden = true;
+                    sessionStatus.hidden = true;
+                } catch (error) {
+                    showMessage(
+                        sessionStatus,
+                        error.message || "Не удалось проверить вход.",
+                        "error"
+                    );
+                } finally {
+                    updateControls();
+                }
+            }
+
+            fileInput.addEventListener("change", () => {
+                uploadStatus.hidden = true;
+
+                const file = fileInput.files[0];
+
+                if (file && file.size > maxFileSize) {
+                    showMessage(
+                        uploadStatus,
+                        "Файл слишком большой. Максимум — 1 000 000 байт.",
+                        "error"
+                    );
+                }
+            });
+
+            form.addEventListener("submit", async (event) => {
+                event.preventDefault();
+
+                if (busy || !signedIn) return;
+
+                const file = fileInput.files[0];
+
+                if (!file) {
+                    showMessage(
+                        uploadStatus,
+                        "Выберите файл.",
+                        "error"
+                    );
+                    return;
+                }
+
+                if (file.size > maxFileSize) {
+                    showMessage(
+                        uploadStatus,
+                        "Файл слишком большой. Максимум — 1 000 000 байт.",
+                        "error"
+                    );
+                    return;
+                }
+
+                const data = new FormData();
+                data.append("file", file);
+
+                busy = true;
+                updateControls();
+
+                showMessage(uploadStatus, "Загружаем файл…");
+
+                try {
+                    const response = await fetch("/api/upload/files", {
+                        method: "POST",
+                        body: data
+                    });
+
+                    if (response.status === 401) {
+                        showSignedOut();
+
+                        showMessage(
+                            uploadStatus,
+                            "Вход истёк. Войдите снова, чтобы загрузить файл.",
+                            "error"
+                        );
+                        return;
+                    }
+
+                    const contentType =
+                        response.headers.get("Content-Type") || "";
+
+                    if (!contentType.includes("application/json")) {
+                        throw new Error(
+                            "Неожиданный ответ сервера. HTTP: " + response.status
+                        );
+                    }
+
+                    const result = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(
+                            result.error || "Не удалось загрузить файл."
+                        );
+                    }
+
+                    showMessage(
+                        uploadStatus,
+                        "Сохранён файл «" + result.original_name +
+                            "», размер: " +
+                            numberFormat.format(result.size) + " байт.",
+                        "success"
+                    );
+
+                    form.reset();
+                } catch (error) {
+                    showMessage(
+                        uploadStatus,
+                        error.message || "Не удалось подтвердить загрузку.",
+                        "error"
+                    );
+                } finally {
+                    busy = false;
+                    updateControls();
+                }
+            });
+
+            const selectedFileName = document.querySelector("#selected-file-name");
+            fileInput.addEventListener("change", () => {
+                const file = fileInput.files[0];
+
+                selectedFileName.textContent = file
+                    ? file.name
+                    : "Файл не выбран";
+            });
+
+            form.addEventListener("reset", () => {
+                selectedFileName.textContent = "Файл не выбран";
+            });
+
+            checkSession();
+        })();
+    </script>
+</body>
+</html>

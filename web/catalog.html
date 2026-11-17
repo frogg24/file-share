@@ -235,8 +235,7 @@
 
                     downloadLink.className = "catalog-file-link";
                     downloadLink.textContent = file.original_name;
-                    downloadLink.href =
-                        "/api/download/files/" + encodeURIComponent(file.id);
+                    downloadLink.href = "/api/download/files/" + encodeURIComponent(file.id);
                     downloadLink.download = "";
 
                     nameCell.append(downloadLink);

@@ -164,7 +164,7 @@ func newMuxWithAuth(verifier *token.Verifier, authAddress *url.URL) http.Handler
 		http.ServeFile(w, r, "web/catalog.html")
 	})
 	mux.HandleFunc("GET /upload", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "web/index.html")
+		http.ServeFile(w, r, "web/upload.html")
 	})
 	mux.HandleFunc("GET /auth", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "web/auth.html")
