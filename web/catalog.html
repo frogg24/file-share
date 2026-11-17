@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Файлы</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-inner">
+            
+
+            <nav class="main-nav" aria-label="Основная навигация">
+                <a href="/" aria-current="page">Файлы</a>
+                <a href="/upload">Загрузить файл</a>
+            </nav>
+
+            <a class="account-link" id="account-link" href="/auth">
+                Войти
+            </a>
+        </div>
+    </header>
+
+    <main class="profile-page">
+        <section class="profile-panel" aria-label="Каталог файлов">
+            <form class="catalog-filters" id="catalog-form">
+                <div class="field catalog-search-field">
+                    <label for="catalog-search">Поиск</label>
+                    <input
+                        id="catalog-search"
+                        name="search"
+                        type="search"
+                        placeholder="Название файла или имя владельца"
+                    >
+                </div>
+
+                <div class="field">
+                    <label for="catalog-sort">Сортировка</label>
+                    <select id="catalog-sort" name="sort">
+                        <option value="name">Название файла</option>
+                        <option value="owner">Имя владельца</option>
+                        <option value="downloads">Число скачиваний</option>
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label for="catalog-order">Порядок</label>
+                    <select id="catalog-order" name="order">
+                        <option value="asc">По возрастанию</option>
+                        <option value="desc">По убыванию</option>
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label for="catalog-page-size">На странице</label>
+                    <select id="catalog-page-size" name="page_size">
+                        <option value="10">10</option>
+                        <option value="20">20</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </div>
+
+                <button class="submit-button" type="submit">
+                    Применить
+                </button>
+                
+            </form>
+
+            <p
+                class="message"
+                id="catalog-status"
+                role="status"
+                aria-live="polite"
+            ></p>
+
+            <div
+                class="table-container"
+                id="catalog-table-container"
+                hidden
+            >
+                <table class="files-table" aria-label="Загруженные файлы">
+                    <thead>
+                        <tr>
+                            <th scope="col">Файл</th>
+                            <th scope="col">Владелец</th>
+                            <th scope="col">Размер</th>
+                            <th scope="col">Скачиваний</th>
+                            <th scope="col">Добавлен</th>
+                        </tr>
+                    </thead>
+                    <tbody id="catalog-body"></tbody>
+                </table>
+            </div>
+
+            <div class="files-pagination" id="catalog-pagination" hidden>
+                <button
+                    class="logout-button"
+                    id="catalog-prev"
+                    type="button"
+                >
+                    Назад
+                </button>
+
+                <span
+                    class="catalog-page-info"
+                    id="catalog-page-info"
+                    aria-live="polite"
+                ></span>
+
+                <button
+                    class="logout-button"
+                    id="catalog-next"
+                    type="button"
+                >
+                    Далее
+                </button>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        (() => {
+            const accountLink = document.querySelector("#account-link");
+
+            const form = document.querySelector("#catalog-form");
+            const formControls = form.querySelectorAll("input, select, button");
+            const searchInput = document.querySelector("#catalog-search");
+            const sortInput = document.querySelector("#catalog-sort");
+            const orderInput = document.querySelector("#catalog-order");
+            const pageSizeInput = document.querySelector("#catalog-page-size");
+
+            const status = document.querySelector("#catalog-status");
+            const tableContainer = document.querySelector("#catalog-table-container");
+            const tableBody = document.querySelector("#catalog-body");
+
+            const pagination = document.querySelector("#catalog-pagination");
+            const previousButton = document.querySelector("#catalog-prev");
+            const nextButton = document.querySelector("#catalog-next");
+            const pageInfo = document.querySelector("#catalog-page-info");
+
+            const numberFormat = new Intl.NumberFormat("ru-RU");
+
+            let filters = readFilters();
+            let currentPage = 1;
+            let total = 0;
+            let busy = false;
+            let loaded = false;
+
+            function readFilters() {
+                return {
+                    search: searchInput.value.trim(),
+                    sort: sortInput.value,
+                    order: orderInput.value,
+                    pageSize: Number(pageSizeInput.value)
+                };
+            }
+
+            function showStatus(text, state = "info") {
+                status.textContent = text;
+                status.dataset.state = state;
+                status.hidden = false;
+            }
+
+            function updateControls() {
+                formControls.forEach((control) => {
+                    control.disabled = busy;
+                });
+                
+                const pageCount = Math.max(
+                    1,
+                    Math.ceil(total / filters.pageSize)
+                );
+
+                previousButton.disabled = busy || !loaded || currentPage <= 1;
+                nextButton.disabled = busy || !loaded || currentPage >= pageCount;
+
+                pagination.hidden = !loaded || total === 0;
+
+                pageInfo.textContent = loaded
+                    ? "Страница " + currentPage + " из " + pageCount +
+                        " · Найдено: " + numberFormat.format(total)
+                    : "";
+            }
+
+            async function requestFiles(page) {
+                const query = new URLSearchParams({
+                    search: filters.search,
+                    sort: filters.sort,
+                    order: filters.order,
+                    page: String(page),
+                    page_size: String(filters.pageSize)
+                });
+
+                const response = await fetch(
+                    "/api/catalog/files?" + query.toString(),
+                    { cache: "no-store" }
+                );
+
+                const contentType = response.headers.get("Content-Type") || "";
+
+                if (!contentType.includes("application/json")) {
+                    throw new Error(
+                        "Неожиданный ответ сервера. HTTP: " + response.status
+                    );
+                }
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(
+                        result.error || "Не удалось получить список файлов."
+                    );
+                }
+
+                return result;
+            }
+
+            function appendCell(row, text) {
+                const cell = document.createElement("td");
+                cell.textContent = text;
+                row.append(cell);
+                return cell;
+            }
+
+            function renderFiles(files) {
+                const rows = document.createDocumentFragment();
+
+                for (const file of files) {
+                    const row = document.createElement("tr");
+
+                    const nameCell = appendCell(row, "");
+                    const downloadLink = document.createElement("a");
+
+                    downloadLink.className = "catalog-file-link";
+                    downloadLink.textContent = file.original_name;
+                    downloadLink.href =
+                        "/api/download/files/" + encodeURIComponent(file.id);
+                    downloadLink.download = "";
+
+                    nameCell.append(downloadLink);
+
+                    appendCell(row, file.owner_name);
+                    appendCell(row, numberFormat.format(file.size) + " байт");
+                    appendCell(row, numberFormat.format(file.download_count));
+                    appendCell(
+                        row,
+                        new Date(file.created_at).toLocaleString("ru-RU", {
+                            dateStyle: "short",
+                            timeStyle: "short"
+                        })
+                    );
+
+                    rows.append(row);
+                }
+
+                tableBody.replaceChildren(rows);
+            }
+
+            async function loadFiles(page = currentPage) {
+                if (busy) return;
+
+                busy = true;
+                loaded = false;
+                tableContainer.hidden = true;
+
+                showStatus("Загружаем список файлов…");
+                updateControls();
+
+                try {
+                    let result = await requestFiles(page);
+
+                    let lastPage = Math.max(
+                        1,
+                        Math.ceil(result.total / result.page_size)
+                    );
+
+                    // Если после удаления файлов страницы больше нет,
+                    // переходим на последнюю существующую.
+                    while (page > lastPage) {
+                        page = lastPage;
+                        result = await requestFiles(page);
+
+                        lastPage = Math.max(
+                            1,
+                            Math.ceil(result.total / result.page_size)
+                        );
+                    }
+
+                    renderFiles(result.items);
+
+                    currentPage = result.page;
+                    total = result.total;
+                    loaded = true;
+
+                    if (result.items.length === 0) {
+                        showStatus(
+                            filters.search
+                                ? "По этому запросу файлы не найдены."
+                                : "Пока нет загруженных файлов."
+                        );
+                    } else {
+                        tableContainer.hidden = false;
+                        status.hidden = true;
+                    }
+                } catch (error) {
+                    currentPage = page;
+
+                    showStatus(
+                        error.message || "Не удалось загрузить каталог.",
+                        "error"
+                    );
+                } finally {
+                    busy = false;
+                    updateControls();
+                }
+            }
+
+            async function updateAccountLink() {
+                try {
+                    const response = await fetch("/api/me", {
+                        cache: "no-store"
+                    });
+
+                    if (response.status === 401) return;
+
+                    if (!response.ok) {
+                        throw new Error("Не удалось проверить сеанс.");
+                    }
+
+                    accountLink.textContent = "Профиль";
+                    accountLink.href = "/profile";
+                } catch (error) {
+                    // Проверка входа не должна мешать загрузке каталога.
+                    console.warn("Проверка сеанса:", error.message);
+                }
+            }
+
+            form.addEventListener("submit", (event) => {
+                event.preventDefault();
+
+                if (busy) return;
+
+                filters = readFilters();
+                loadFiles(1);
+            });
+
+            previousButton.addEventListener("click", () => {
+                if (busy || !loaded || currentPage <= 1) return;
+                loadFiles(currentPage - 1);
+            });
+
+            nextButton.addEventListener("click", () => {
+                const pageCount = Math.max(
+                    1,
+                    Math.ceil(total / filters.pageSize)
+                );
+
+                if (busy || !loaded || currentPage >= pageCount) return;
+                loadFiles(currentPage + 1);
+            });
+
+            updateAccountLink();
+            loadFiles(1);
+        })();
+    </script>
+</body>
+</html>

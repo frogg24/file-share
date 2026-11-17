@@ -161,6 +161,9 @@ func newMuxWithAuth(verifier *token.Verifier, authAddress *url.URL) http.Handler
 	mux.Handle("GET /api/download/files/{id}", downloadProxy)
 
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "web/catalog.html")
+	})
+	mux.HandleFunc("GET /upload", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "web/index.html")
 	})
 	mux.HandleFunc("GET /auth", func(w http.ResponseWriter, r *http.Request) {
