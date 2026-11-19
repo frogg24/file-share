@@ -50,7 +50,19 @@ func NewRabbitMQ(address, user, password string) (*RabbitMQ, error) {
 		connection.Close()
 		return nil, err
 	}
-	err = channel.ExchangeDeclare(
+	if err := declareTopology(channel); err != nil {
+		connection.Close()
+		return nil, err
+	}
+
+	return &RabbitMQ{
+		connection: connection,
+		channel:    channel,
+	}, nil
+}
+
+func declareTopology(channel *amqp.Channel) error {
+	if err := channel.ExchangeDeclare(
 		exchangeName,
 		"topic",
 		true,  // сохранять exchange при перезапуске RabbitMQ
@@ -58,68 +70,34 @@ func NewRabbitMQ(address, user, password string) (*RabbitMQ, error) {
 		false, // разрешить отправку от наших сервисов
 		false, // дождаться ответа RabbitMQ
 		nil,
-	)
-	if err != nil {
-		connection.Close()
-		return nil, err
+	); err != nil {
+		return err
 	}
-	_, err = channel.QueueDeclare(
+	if _, err := channel.QueueDeclare(
 		catalogQueue,
 		true,  // сохранять очередь при перезапуске RabbitMQ
 		false, // не удалять без получателя
 		false, // очередь не привязана к одному подключению
 		false, // дождаться ответа RabbitMQ
 		nil,
-	)
-	if err != nil {
-		connection.Close()
-		return nil, err
+	); err != nil {
+		return err
 	}
 	for _, key := range []string{"file.*", "user.*"} {
-		err = channel.QueueBind(
-			catalogQueue,
-			key,
-			exchangeName,
-			false,
-			nil,
-		)
-		if err != nil {
-			connection.Close()
-			return nil, err
+		if err := channel.QueueBind(catalogQueue, key, exchangeName, false, nil); err != nil {
+			return err
 		}
 	}
 
-	_, err = channel.QueueDeclare(
-		downloadQueue,
-		true,
-		false,
-		false,
-		false,
-		nil,
-	)
-	if err != nil {
-		connection.Close()
-		return nil, err
+	if _, err := channel.QueueDeclare(downloadQueue, true, false, false, false, nil); err != nil {
+		return err
 	}
-
 	for _, key := range []string{"file.replica.*", "file.deleted"} {
-		err = channel.QueueBind(
-			downloadQueue,
-			key,
-			exchangeName,
-			false,
-			nil,
-		)
-		if err != nil {
-			connection.Close()
-			return nil, err
+		if err := channel.QueueBind(downloadQueue, key, exchangeName, false, nil); err != nil {
+			return err
 		}
 	}
-
-	return &RabbitMQ{
-		connection: connection,
-		channel:    channel,
-	}, nil
+	return nil
 }
 func (r *RabbitMQ) Close() error {
 	return r.connection.Close()

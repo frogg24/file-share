@@ -140,12 +140,6 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 				"error": "файл не найден",
 			})
 
-		case errors.Is(err, ErrEventPublicationFailed):
-			log.Printf("File deletion notification failed: %v", err)
-			writeJSON(w, http.StatusServiceUnavailable, map[string]string{
-				"error": "удаление отмечено, но отправить уведомление не удалось; повторите запрос",
-			})
-
 		default:
 			log.Printf("File deletion failed: %v", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{

@@ -2,11 +2,9 @@ package upload
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"strings"
 
-	"github.com/frogg24/file-share/internal/events"
 	"github.com/google/uuid"
 )
 
@@ -18,23 +16,12 @@ type UploadInput struct {
 
 const MaxFileSize int64 = 1_000_000
 
-type EventPublisher interface {
-	Publish(ctx context.Context, eventType string, data any) error
-}
-
 type Service struct {
 	repository *Repository
-	publisher  EventPublisher
 }
 
-func NewService(
-	repository *Repository,
-	publisher EventPublisher,
-) *Service {
-	return &Service{
-		repository: repository,
-		publisher:  publisher,
-	}
+func NewService(repository *Repository) *Service {
+	return &Service{repository: repository}
 }
 
 func (s *Service) Upload(ctx context.Context, input UploadInput) (*File, error) {
@@ -64,37 +51,7 @@ func (s *Service) Upload(ctx context.Context, input UploadInput) (*File, error) 
 		return nil, err
 	}
 
-	event := events.FileCreated{
-		FileID:       file.ID,
-		OwnerID:      file.OwnerID,
-		OriginalName: file.OriginalName,
-		Size:         file.Size,
-		CreatedAt:    file.CreatedAt,
-	}
-
-	err = s.publisher.Publish(ctx, events.FileCreatedType, event)
-	if err != nil {
-		log.Printf("File %s saved, but event publication failed: %v", file.ID, err)
-	} else {
-		log.Printf("Sent file.created: file_id=%s", file.ID)
-	}
-
-	replica := events.FileReplicaCreated{
-		FileID:       file.ID,
-		OwnerID:      file.OwnerID,
-		OriginalName: file.OriginalName,
-		Size:         file.Size,
-		Content:      file.Content,
-		CreatedAt:    file.CreatedAt,
-	}
-
-	err = s.publisher.Publish(ctx, events.FileReplicaCreatedType, replica)
-	if err != nil {
-		log.Printf("File %s saved, but replica event publication failed: %v", file.ID, err)
-	} else {
-		log.Printf("Sent file.replica.created: file_id=%s", file.ID)
-	}
-
+	log.Printf("File saved and notifications queued: file_id=%s", file.ID)
 	return &file, nil
 }
 
@@ -111,24 +68,6 @@ func (s *Service) Delete(ctx context.Context, fileID, ownerID string) error {
 		return err
 	}
 
-	event := events.FileDeleted{
-		FileID:       file.ID,
-		OwnerID:      file.OwnerID,
-		OriginalName: file.OriginalName,
-		Size:         file.Size,
-		CreatedAt:    file.CreatedAt,
-		DeletedAt:    *file.DeletedAt,
-	}
-
-	if err := s.publisher.Publish(ctx, events.FileDeletedType, event); err != nil {
-		return fmt.Errorf(
-			"%w: file_id=%s: %v",
-			ErrEventPublicationFailed,
-			file.ID,
-			err,
-		)
-	}
-
-	log.Printf("Sent file.deleted: file_id=%s", file.ID)
+	log.Printf("File deleted and notification queued: file_id=%s", file.ID)
 	return nil
 }
