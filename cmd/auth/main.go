@@ -63,7 +63,7 @@ func main() {
 	service := auth.NewService(repository, broker)
 	tokenIssuer, err := auth.NewTokenIssuer(
 		"secrets/auth-private.key",
-		15*time.Minute,
+		time.Hour,
 	)
 	if err != nil {
 		log.Fatal(err)
