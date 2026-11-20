@@ -38,6 +38,12 @@ func NewRabbitMQ(address, user, password string) (*RabbitMQ, error) {
 					MaxRetryCount: 60,
 					RetryInterval: 5 * time.Second,
 				},
+				OnTopologyEntityError: func(
+					_ *amqp.Connection,
+					_ amqp.TopologyRecoveryEntity,
+				) bool {
+					return false
+				},
 			},
 		},
 	)
